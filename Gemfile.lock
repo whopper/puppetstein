@@ -1,0 +1,30 @@
+GEM
+  specs:
+    beaker-hostgenerator (0.7.2)
+      deep_merge (~> 1.0)
+      stringify-hash (~> 0.0.0)
+    coderay (1.1.1)
+    colored (1.2)
+    cri (2.7.0)
+      colored (~> 1.2)
+    deep_merge (1.0.1)
+    git (1.3.0)
+    method_source (0.8.2)
+    pry (0.10.4)
+      coderay (~> 1.1.0)
+      method_source (~> 0.8.1)
+      slop (~> 3.4)
+    slop (3.6.0)
+    stringify-hash (0.0.2)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  beaker-hostgenerator
+  cri
+  git
+  pry
+
+BUNDLED WITH
+   1.11.2
