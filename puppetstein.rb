@@ -37,7 +37,7 @@ command = Cri::Command.define do
   # Option: use local changes rather than github -> --puppet_repo=<blah> --puppet_sha=<blah>
   # Option: install PA:<something/master> from package on VM
   # Option: load in JSON config
-  option :v, :pa_version, 'specify base puppet-agent version', argument: :required
+  option nil, :puppet_agent, 'specify base puppet-agent version', argument: :required
   option :i, :install, 'install the composed puppet-agent package on a VM', argument: :optional
   option :p, :platform, 'which platform to install on', argument: :optional
   option nil, :puppet, 'which fork and SHA of puppet to use, separated with a :', argument: :optional
@@ -47,7 +47,6 @@ command = Cri::Command.define do
   option :d, :debug, 'debug mode', argument: :optional
 
   run do |opts, args, cmd|
-    pa_version = opts.fetch(:pa_version) if opts[:pa_version]
     install = opts.fetch(:install) if opts[:install]
     tests = opts.fetch(:tests) if opts[:tests]
     platform = opts.fetch(:platform) if opts[:platform]
@@ -70,20 +69,37 @@ command = Cri::Command.define do
       exit
     end
 
-    clone_repo('puppet-agent', pa_version)
-    clone_repo('puppet')
-    clone_repo('facter')
-    clone_repo('hiera')
-
     # Hacking puppet-agent phase
+
+    if opts[:puppet_agent]
+      pa_fork, pa_version = opts[:puppet_agent].split(':')
+      clone_repo('puppet-agent', pa_fork, pa_version)
+    else
+      clone_repo('puppet-agent', 'puppetlabs', 'master')
+    end
+
     if opts[:puppet]
       puppet_fork, puppet_sha = opts[:puppet].split(':')
       change_component_ref("puppet", "git://github.com/#{puppet_fork}/puppet.git", puppet_sha)
+      clone_repo('puppet', puppet_fork, puppet_sha)
+    else
+      clone_repo('puppet', 'puppetlabs', 'master')
     end
 
     if opts[:facter]
       facter_fork, facter_sha = opts[:facter].split(':')
       change_component_ref("facter", "git://github.com/#{facter_fork}/facter.git", facter_sha)
+      clone_repo('facter', facter_fork, facter_sha)
+    else
+      clone_repo('facter', 'puppetlabs', 'master')
+    end
+
+    if opts[:hiera]
+      hiera_fork, hiera_sha = opts[:hiera].split(':')
+      change_component_ref("hiera", "git://github.com/#{hiera_fork}/hiera.git", hiera_sha)
+      clone_repo('hiera', hiera_fork, hiera_sha)
+    else
+      clone_repo('hiera', 'puppetlabs', 'master')
     end
 
     # Build phase
