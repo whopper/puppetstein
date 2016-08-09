@@ -32,7 +32,6 @@ command = Cri::Command.define do
 
   # TODO:
   # Use puppetserver
-  # Option: run beaker against preserved host with new set of tests
   # PR testing: provide pr, get info and build it
   # Option: hack in non-compiled bits. Can combine with PR testing for puppet
   # Option: use local changes rather than github -> --puppet_repo=<blah> --puppet_sha=<blah>
@@ -43,6 +42,7 @@ command = Cri::Command.define do
   option :p, :platform, 'which platform to install on', argument: :optional
   option nil, :puppet, 'which fork and SHA of puppet to use, separated with a :', argument: :optional
   option nil, :facter, 'which fork and SHA of facter to use, separated with a :', argument: :optional
+  option nil, :host, 'use a pre-provisioned host. Useful for re-running tests', argument: :optional
   option :t, :tests, 'tests to run against a puppet-agent installation', argument: :optional
 
   run do |opts, args, cmd|
@@ -50,6 +50,7 @@ command = Cri::Command.define do
     install = opts.fetch(:install) if opts[:install]
     tests = opts.fetch(:tests) if opts[:tests]
     platform = opts.fetch(:platform) if opts[:platform]
+    host = opts.fetch(:host) if opts[:host]
     #pa_path = '/tmp/puppet-agent'
 
     platform_family = get_platform_family(platform)
@@ -58,6 +59,14 @@ command = Cri::Command.define do
     platform_arch = get_platform_arch(platform)
     #vanagon_arch = get_vanagon_platform_arch(platform)
     package_type = get_package_type(platform_family)
+
+    if host
+      # Just run tests on pre-provisioned host
+      if tests
+        run_tests_on_host(host, platform_family, platform_flavor, platform_version, tests)
+      end
+      exit
+    end
 
     clone_repo('puppet-agent', pa_version)
     clone_repo('puppet')
@@ -93,7 +102,6 @@ command = Cri::Command.define do
         run_tests_on_host(hostname, platform_family, platform_flavor, platform_version, tests)
       end
     end
-
     #cleanup
   end
 end
