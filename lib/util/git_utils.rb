@@ -13,9 +13,9 @@ module Puppetstein
         g.branch(sha).checkout
         log_notice("cloned #{project}#{sha} to /tmp/#{project}")
       else
-        g = Git.init("/tmp/#{project}")
+        g = Git.open("/tmp/#{project}")
         g.branch(sha).checkout
-        log_notice("Found local checkout of #{project} in /tmp/#{project}")
+        log_notice("Found local checkout of #{project} in /tmp/#{project}. Using #{sha}")
       end
     end
   end

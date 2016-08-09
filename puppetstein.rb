@@ -32,12 +32,12 @@ command = Cri::Command.define do
 
   # TODO:
   # Use puppetserver
-  # Actually use pa_version
   # Option: run beaker against preserved host with new set of tests
   # PR testing: provide pr, get info and build it
   # Option: hack in non-compiled bits. Can combine with PR testing for puppet
   # Option: use local changes rather than github -> --puppet_repo=<blah> --puppet_sha=<blah>
   # Option: install PA:<something/master> from package on VM
+  # Option: load in JSON config
   option :v, :pa_version, 'specify base puppet-agent version', argument: :required
   option :i, :install, 'install the composed puppet-agent package on a VM', argument: :optional
   option :p, :platform, 'which platform to install on', argument: :optional
@@ -46,7 +46,6 @@ command = Cri::Command.define do
   option :t, :tests, 'tests to run against a puppet-agent installation', argument: :optional
 
   run do |opts, args, cmd|
-    # TODO: load in JSON config
     pa_version = opts.fetch(:pa_version) if opts[:pa_version]
     install = opts.fetch(:install) if opts[:install]
     tests = opts.fetch(:tests) if opts[:tests]
@@ -57,7 +56,7 @@ command = Cri::Command.define do
     platform_version = get_platform_version(platform)
     platform_flavor = get_platform_flavor(platform)
     platform_arch = get_platform_arch(platform)
-    vanagon_arch = get_vanagon_platform_arch(platform)
+    #vanagon_arch = get_vanagon_platform_arch(platform)
     package_type = get_package_type(platform_family)
 
     clone_repo('puppet-agent', pa_version)
