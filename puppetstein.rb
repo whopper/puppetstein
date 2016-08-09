@@ -3,11 +3,17 @@
 #! /usr/env/ruby
 
 require './lib/util/platform_utils.rb'
+require './lib/util/git_utils.rb'
+require './lib/util/vm_utils.rb'
+require './lib/util/log_utils.rb'
 require 'cri'
 require 'git'
 require 'json'
 
 include Puppetstein::PlatformUtils
+include Puppetstein::GitUtils
+include Puppetstein::VMUtils
+include Puppetstein::LogUtils
 
 command = Cri::Command.define do
   name 'puppetstein'
@@ -24,6 +30,14 @@ command = Cri::Command.define do
     exit 0
   end
 
+  # TODO:
+  # Use puppetserver
+  # Actually use pa_version
+  # Option: run beaker against preserved host with new set of tests
+  # PR testing: provide pr, get info and build it
+  # Option: hack in non-compiled bits. Can combine with PR testing for puppet
+  # Option: use local changes rather than github -> --puppet_repo=<blah> --puppet_sha=<blah>
+  # Option: install PA:<something/master> from package on VM
   option :v, :pa_version, 'specify base puppet-agent version', argument: :required
   option :i, :install, 'install the composed puppet-agent package on a VM', argument: :optional
   option :p, :platform, 'which platform to install on', argument: :optional
@@ -33,7 +47,7 @@ command = Cri::Command.define do
 
   run do |opts, args, cmd|
     # TODO: load in JSON config
-    #pa_version = opts.fetch(:pa_version) if opts[:pa_version]
+    pa_version = opts.fetch(:pa_version) if opts[:pa_version]
     install = opts.fetch(:install) if opts[:install]
     tests = opts.fetch(:tests) if opts[:tests]
     platform = opts.fetch(:platform) if opts[:platform]
@@ -46,7 +60,7 @@ command = Cri::Command.define do
     vanagon_arch = get_vanagon_platform_arch(platform)
     package_type = get_package_type(platform_family)
 
-    clone_repo('puppet-agent')
+    clone_repo('puppet-agent', pa_version)
     clone_repo('puppet')
     clone_repo('facter')
     clone_repo('hiera')
@@ -116,15 +130,6 @@ def build_puppet_agent(platform_family, platform_version, platform_arch, vanagon
   end
 end
 
-def clone_repo(project)
-  if !File.exists?("/tmp/#{project}")
-    Git.clone("git@github.com:puppetlabs/#{project}.git", project, :path => '/tmp/')
-    log_notice("cloned #{project} to /tmp/#{project}")
-  else
-    log_notice("Found local checkout of #{project} in /tmp/#{project}")
-  end
-end
-
 def fetch_puppet_agent_package(version, platform)
   # http://builds.puppetlabs.lan/puppet-agent/1.5.3/artifacts/el/7/PC1/x86_64/puppet-agent-1.5.3-1.el7.x86_64.rpm
   os, os_ver, arch = platform.split('-')
@@ -134,38 +139,6 @@ def fetch_puppet_agent_package(version, platform)
   IO.popen("wget -r -nH -nd -np -R 'index.html*' http://builds.puppetlabs.lan/puppet-agent/#{version}/artifacts/#{os}/#{os_ver}/PC1/#{arch}/ -P ./output -o /dev/null")
   log_notice("Done! Package in output/#{package_name}")
   "./output/#{package_name}"
-end
-
-def request_vm(platform)
-  log_notice("Acquiring VM: #{platform}")
-  output = `curl -d --url http://vmpooler.delivery.puppetlabs.net/vm/#{platform} ;`
-  match = /\"hostname\": \"(.*)\"/.match(output)
-  log_notice("Done! Hostname: #{match[1]}")
-  match[1]
-end
-
-def copy_package_to_vm(hostname, package)
-    IO.popen("scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa-acceptance #{package} root@#{hostname}:/root") do |io|
-      while (line = io.gets) do
-        puts line
-      end
-    end
-end
-
-def install_puppet_agent_on_vm(hostname, platform_family)
-  log_notice("Installing puppet-agent <VERSION> on #{hostname}")
-  pkg_cmd = get_package_command(platform_family)
-  IO.popen("ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa-acceptance root@#{hostname} '#{pkg_cmd} /root/puppet-agent* && ln -s /opt/puppetlabs/bin/* /usr/bin'") do |io|
-    while (line = io.gets) do
-      puts line
-    end
-  end
-  log_notice("Done!")
-end
-
-def log_notice(message)
-  puts message
-  puts "============================================"
 end
 
 def cleanup
