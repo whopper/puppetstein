@@ -44,6 +44,7 @@ command = Cri::Command.define do
   option nil, :facter, 'which fork and SHA of facter to use, separated with a :', argument: :optional
   option nil, :host, 'use a pre-provisioned host. Useful for re-running tests', argument: :optional
   option :t, :tests, 'tests to run against a puppet-agent installation', argument: :optional
+  option :d, :debug, 'debug mode', argument: :optional
 
   run do |opts, args, cmd|
     pa_version = opts.fetch(:pa_version) if opts[:pa_version]
@@ -51,6 +52,7 @@ command = Cri::Command.define do
     tests = opts.fetch(:tests) if opts[:tests]
     platform = opts.fetch(:platform) if opts[:platform]
     host = opts.fetch(:host) if opts[:host]
+    debug = opts.fetch(:debug) if opts[:debug]
     #pa_path = '/tmp/puppet-agent'
 
     platform_family = get_platform_family(platform)
@@ -85,7 +87,7 @@ command = Cri::Command.define do
     end
 
     # Build phase
-    #build_puppet_agent(platform_family, platform_version, platform_arch, vanagon_arch, package_type)
+    build_puppet_agent(platform_family, platform_version, platform_arch, vanagon_arch, package_type) unless debug
     package_path = get_puppet_agent_package_output_path(platform_family, platform_flavor, platform_version, platform_arch, package_type)
 
     # Installation phase
