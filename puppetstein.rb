@@ -3,10 +3,10 @@
 #! /usr/env/ruby
 
 require_relative 'lib/platform.rb'
-require './lib/util/platform_utils.rb'
-require './lib/util/git_utils.rb'
-require './lib/util/vm_utils.rb'
-require './lib/util/log_utils.rb'
+require_relative 'lib/util/platform_utils.rb'
+require_relative 'lib/util/git_utils.rb'
+require_relative 'lib/util/vm_utils.rb'
+require_relative 'lib/util/log_utils.rb'
 require 'cri'
 require 'git'
 require 'json'
@@ -21,7 +21,7 @@ command = Cri::Command.define do
   name 'puppetstein'
   usage 'puppetstein [options] [arguments]
 
-         Example: puppetstein 1.5.4 --install --vmpooler --tests=./puppet/acceptance/tests'
+         Example: puppetstein --puppet_agent=puppetlabs:1.5.4 --puppet=whopper:my_branch --hack --install --tests=./puppet/acceptance/tests --platform=centos-7-x86_64'
 
   summary 'Standalone puppet-agent composing and testing tool'
   description 'A tool to automate the building and composition of various versions of
@@ -35,7 +35,6 @@ command = Cri::Command.define do
   # TODO:
   # Use puppetserver
   # PR testing: provide pr, get info and build it
-  # Option: hack in non-compiled bits. Can combine with PR testing for puppet
   # Option: use local changes rather than github -> --puppet_repo=<blah> --puppet_sha=<blah>
   # Option: load in JSON config
   option nil, :puppet_agent, 'specify base puppet-agent version', argument: :optional
@@ -45,6 +44,7 @@ command = Cri::Command.define do
   option nil, :hack, 'hack mode: patch installed PA with puppet/hiera', argument: :optional
   option :b, :build, 'build mode: force puppetstein to build a new PA', argument: :optional
 
+  # if file: then use local checkout
   option nil, :puppet, 'separated with a :', argument: :optional
   option nil, :facter, 'separated with a :', argument: :optional
   option nil, :hiera, 'separated with a :', argument: :optional
