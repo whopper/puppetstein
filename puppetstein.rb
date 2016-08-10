@@ -2,6 +2,7 @@
 
 #! /usr/env/ruby
 
+require_relative 'lib/platform.rb'
 require './lib/util/platform_utils.rb'
 require './lib/util/git_utils.rb'
 require './lib/util/vm_utils.rb'
@@ -10,6 +11,7 @@ require 'cri'
 require 'git'
 require 'json'
 
+include Puppetstein
 include Puppetstein::PlatformUtils
 include Puppetstein::GitUtils
 include Puppetstein::VMUtils
@@ -39,7 +41,7 @@ command = Cri::Command.define do
   # Option: load in JSON config
   option nil, :puppet_agent, 'specify base puppet-agent version', argument: :required
   option :i, :install, 'install the composed puppet-agent package on a VM', argument: :optional
-  option :p, :platform, 'which platform to install on', argument: :optional
+  option :p, :platform, 'which platform to install on', argument: :required
   option nil, :puppet, 'which fork and SHA of puppet to use, separated with a :', argument: :optional
   option nil, :facter, 'which fork and SHA of facter to use, separated with a :', argument: :optional
   option nil, :host, 'use a pre-provisioned host. Useful for re-running tests', argument: :optional
@@ -47,24 +49,27 @@ command = Cri::Command.define do
   option :d, :debug, 'debug mode', argument: :optional
 
   run do |opts, args, cmd|
+
+    platform = Platform.new(opts.fetch(:platform))
+    platform.hostname = opts.fetch(:host) if opts[:host]
+
     install = opts.fetch(:install) if opts[:install]
     tests = opts.fetch(:tests) if opts[:tests]
-    platform = opts.fetch(:platform) if opts[:platform]
-    host = opts.fetch(:host) if opts[:host]
     debug = opts.fetch(:debug) if opts[:debug]
+    #platform = opts.fetch(:platform) if opts[:platform]
     #pa_path = '/tmp/puppet-agent'
 
     # TODO: stick these in a helper class object
-    platform_family = get_platform_family(platform)
-    platform_version = get_platform_version(platform)
-    platform_flavor = get_platform_flavor(platform)
-    platform_arch = get_platform_arch(platform)
-    vanagon_arch = get_vanagon_platform_arch(platform)
+    #p.family = get_platform_family(platform)
+    #p.version = get_platform_version(platform)
+    #p.flavor = get_platform_flavor(platform)
+    #p.arch = get_platform_arch(platform)
+    #p.vanagon_arch = get_vanagon_platform_arch(platform)
 
-    if host
+    if platform.hostname
       # Just run tests on pre-provisioned host
       if tests
-        run_tests_on_host(host, platform_family, platform_flavor, platform_version, tests)
+        run_tests_on_host(platform, tests)
       end
       exit
     end
@@ -81,13 +86,8 @@ command = Cri::Command.define do
       # First, install specified PA version on host
       # then, figure out changed files in SHA. Download and replace existing files with them
       # Run tests
-      hostname = request_vm(platform)
-      install_puppet_agent_from_url_on_vm(hostname,
-                                          pa_version,
-                                          platform_family,
-                                          platform_flavor,
-                                          platform_version,
-                                          vanagon_arch)
+      platform.hostname = request_vm(platform)
+      install_puppet_agent_from_url_on_vm(platform, pa_version)
 
       # install_puppet_agent_from_web_on_vm()
       # get_changed_file_list()
@@ -103,7 +103,7 @@ command = Cri::Command.define do
 
       # TODO: leave big note that the VM is alive with FQDN
       if tests
-        run_tests_on_host(hostname, platform_family, platform_flavor, platform_version, tests)
+        run_tests_on_host(platform, tests)
       end
       exit
     end
@@ -136,25 +136,31 @@ command = Cri::Command.define do
     end
 
     # Build phase
-    build_puppet_agent(platform_family, platform_version, platform_arch, vanagon_arch) unless debug
-    package_path = get_puppet_agent_package_output_path(platform_family, platform_flavor, platform_version, platform_arch)
+    build_puppet_agent(platform) unless debug
+    package_path = get_puppet_agent_package_output_path(platform)
 
     if install
-      hostname = request_vm(platform)
-      copy_package_to_vm(hostname, package_path)
-      install_puppet_agent_on_vm(hostname, platform_family)
+      platform.hostname = request_vm(platform)
+      copy_package_to_vm(platform, package_path)
+      install_puppet_agent_on_vm(platform)
 
       if tests
-        run_tests_on_host(hostname, platform_family, platform_flavor, platform_version, tests)
+        run_tests_on_host(platform, tests)
       end
     end
     #cleanup
   end
 end
 
-def run_tests_on_host(hostname, platform_family, platform_flavor, platform_version, tests)
+def run_tests_on_host(platform, tests)
   # Need host config... need master...?
-  IO.popen("bundle exec beaker-hostgenerator #{platform_family}#{platform_version}-64ma{hostname=#{hostname}.delivery.puppetlabs.net} > /tmp/puppet-agent/hosts.yml")
+  if platform.family == 'el'
+    os = platform.flavor
+  else
+    os = platform.family
+  end
+
+  IO.popen("bundle exec beaker-hostgenerator #{os}#{platform.version}-64ma{hostname=#{platform.hostname}.delivery.puppetlabs.net} > /tmp/puppet-agent/hosts.yml")
   test_groups = tests.split(',')
   test_groups.each do |test|
     project, test = test.split(':')
@@ -174,24 +180,13 @@ def change_component_ref(component_name, url, ref)
   log_notice("updated /tmp/puppet-agent/configs/components/#{component_name}.json with url #{url} and ref #{ref}")
 end
 
-def build_puppet_agent(platform_family, platform_version, platform_arch, vanagon_arch)
-  log_notice("building puppet-agent for #{platform_family} #{platform_version} #{platform_arch}")
-  IO.popen("VANAGON_SSH_KEY=~/.ssh/id_rsa-acceptance && pushd /tmp/puppet-agent && bundle install && bundle exec build puppet-agent #{platform_family}-#{platform_version}-#{vanagon_arch} && popd") do |io|
+def build_puppet_agent(platform)
+  log_notice("building puppet-agent for #{platform.family} #{platform.version} #{platform.arch}")
+  IO.popen("VANAGON_SSH_KEY=~/.ssh/id_rsa-acceptance && pushd /tmp/puppet-agent && bundle install && bundle exec build puppet-agent #{platform.family}-#{platform.version}-#{platform.vanagon_arch} && popd") do |io|
     while (line = io.gets) do
       puts line
     end
   end
-end
-
-def fetch_puppet_agent_package(version, platform)
-  # http://builds.puppetlabs.lan/puppet-agent/1.5.3/artifacts/el/7/PC1/x86_64/puppet-agent-1.5.3-1.el7.x86_64.rpm
-  os, os_ver, arch = platform.split('-')
-  package_name = "puppet-agent-#{version}-1.#{os}#{os_ver}.#{arch}.rpm"
-
-  log_notice("Fetching puppet-agent #{version}...")
-  IO.popen("wget -r -nH -nd -np -R 'index.html*' http://builds.puppetlabs.lan/puppet-agent/#{version}/artifacts/#{os}/#{os_ver}/PC1/#{arch}/ -P ./output -o /dev/null")
-  log_notice("Done! Package in output/#{package_name}")
-  "./output/#{package_name}"
 end
 
 def cleanup
