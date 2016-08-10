@@ -1,5 +1,11 @@
 #! /Users/whopper/.rbenv/shims/ruby
 
+require_relative 'log_utils.rb'
+require_relative 'platform_utils.rb'
+
+include Puppetstein::LogUtils
+include Puppetstein::PlatformUtils
+
 #! /usr/env/ruby
 module Puppetstein
   module VMUtils
@@ -29,6 +35,33 @@ module Puppetstein
         end
       end
       log_notice("Done!")
+    end
+
+    def install_puppet_agent_from_url_on_vm(hostname, sha, platform_family, platform_flavor, platform_version, vanagon_arch)
+      base_url = 'http://builds.puppetlabs.lan/puppet-agent'
+      case platform_family
+        when 'el'
+          url = "#{base_url}/#{sha}/artifacts/el/#{platform_version}/PC1/#{vanagon_arch}"
+          package_regex = "puppet-agent*el#{platform_version}\.#{vanagon_arch}*"
+        when 'debian'
+          url = "#{base_url}/#{sha}/artifacts/deb/#{platform_flavor}/PC1/"
+          package_regex = "puppet-agent*#{platform_flavor}_#{vanagon_arch}*"
+      end
+
+      pkg_manager_cmd = get_package_manager_command(platform_family)
+      IO.popen("ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa-acceptance root@#{hostname} '#{pkg_manager_cmd} wget'") do |io|
+        while (line = io.gets) do
+          puts line
+        end
+      end
+
+      IO.popen("ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa-acceptance root@#{hostname} 'wget -r -nH -nd -R \'*bundle*\' #{url} -P /root -A \'*#{package_regex}*\' -o /dev/null'") do |io|
+        while (line = io.gets) do
+          puts line
+        end
+      end
+
+      install_puppet_agent_on_vm(hostname, platform_family)
     end
   end
 end

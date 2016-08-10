@@ -54,12 +54,12 @@ command = Cri::Command.define do
     debug = opts.fetch(:debug) if opts[:debug]
     #pa_path = '/tmp/puppet-agent'
 
+    # TODO: stick these in a helper class object
     platform_family = get_platform_family(platform)
     platform_version = get_platform_version(platform)
     platform_flavor = get_platform_flavor(platform)
     platform_arch = get_platform_arch(platform)
-    #vanagon_arch = get_vanagon_platform_arch(platform)
-    package_type = get_package_type(platform_family)
+    vanagon_arch = get_vanagon_platform_arch(platform)
 
     if host
       # Just run tests on pre-provisioned host
@@ -69,14 +69,47 @@ command = Cri::Command.define do
       exit
     end
 
-    # Hacking puppet-agent phase
-
     if opts[:puppet_agent]
       pa_fork, pa_version = opts[:puppet_agent].split(':')
-      clone_repo('puppet-agent', pa_fork, pa_version)
     else
-      clone_repo('puppet-agent', 'puppetlabs', 'master')
+      pa_fork = 'puppetlabs'
+      pa_version = 'master'
     end
+
+    if (!opts[:facter] && (opts[:puppet] || opts[:hiera])) || (!opts[:facter] && !opts[:puppet] && !opts[:hiera])
+      # Hacky bit: for Ruby projects, hack in changes rather than building new package
+      # First, install specified PA version on host
+      # then, figure out changed files in SHA. Download and replace existing files with them
+      # Run tests
+      hostname = request_vm(platform)
+      install_puppet_agent_from_url_on_vm(hostname,
+                                          pa_version,
+                                          platform_family,
+                                          platform_flavor,
+                                          platform_version,
+                                          vanagon_arch)
+
+      # install_puppet_agent_from_web_on_vm()
+      # get_changed_file_list()
+      # replace_files_on_host(list, paths) ?
+      # test, exit
+      if opts[:puppet]
+        log_notice('Patching puppet-agent with puppet PR')
+      end
+
+      if opts[:hiera]
+        log_notice('Patching puppet-agent with hiera PR')
+      end
+
+      # TODO: leave big note that the VM is alive with FQDN
+      if tests
+        run_tests_on_host(hostname, platform_family, platform_flavor, platform_version, tests)
+      end
+      exit
+    end
+
+    # Hacking puppet-agent phase
+    clone_repo('puppet-agent', pa_fork, pa_version)
 
     if opts[:puppet]
       puppet_fork, puppet_sha = opts[:puppet].split(':')
@@ -103,13 +136,8 @@ command = Cri::Command.define do
     end
 
     # Build phase
-    build_puppet_agent(platform_family, platform_version, platform_arch, vanagon_arch, package_type) unless debug
-    package_path = get_puppet_agent_package_output_path(platform_family, platform_flavor, platform_version, platform_arch, package_type)
-
-    # Installation phase
-    #if !opts[:puppet_sha]
-    #  package_path = fetch_puppet_agent_package(pa_version, platform)
-    #end
+    build_puppet_agent(platform_family, platform_version, platform_arch, vanagon_arch) unless debug
+    package_path = get_puppet_agent_package_output_path(platform_family, platform_flavor, platform_version, platform_arch)
 
     if install
       hostname = request_vm(platform)
@@ -146,7 +174,7 @@ def change_component_ref(component_name, url, ref)
   log_notice("updated /tmp/puppet-agent/configs/components/#{component_name}.json with url #{url} and ref #{ref}")
 end
 
-def build_puppet_agent(platform_family, platform_version, platform_arch, vanagon_arch, package_type)
+def build_puppet_agent(platform_family, platform_version, platform_arch, vanagon_arch)
   log_notice("building puppet-agent for #{platform_family} #{platform_version} #{platform_arch}")
   IO.popen("VANAGON_SSH_KEY=~/.ssh/id_rsa-acceptance && pushd /tmp/puppet-agent && bundle install && bundle exec build puppet-agent #{platform_family}-#{platform_version}-#{vanagon_arch} && popd") do |io|
     while (line = io.gets) do

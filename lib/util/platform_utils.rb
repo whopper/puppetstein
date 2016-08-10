@@ -79,12 +79,21 @@ module Puppetstein
       end
     end
 
-    def get_puppet_agent_package_output_path(platform_family, platform_flavor, platform_version, platform_arch, package_type)
+    def get_package_manager_command(platform_family)
+      case platform_family
+        when 'el'
+          'yum -y install'
+        when 'debian'
+          'apt-get -y install'
+      end
+    end
+
+    def get_puppet_agent_package_output_path(platform_family, platform_flavor, platform_version, platform_arch)
       desc = `git --git-dir=/tmp/puppet-agent/.git describe`
       case platform_family
-      when 'el'
+        when 'el'
         "/tmp/puppet-agent/output/el/#{platform_version}/PC1/#{platform_arch}/puppet-agent-#{desc.gsub('-','.').chomp}-1.el#{platform_version}.#{platform_arch}.rpm"
-      when 'debian'
+        when 'debian'
         "/tmp/puppet-agent/output/deb/#{platform_flavor}/PC1/puppet-agent_#{desc.gsub('-','.').chomp}-1#{platform_flavor}_#{get_vanagon_platform_arch("debian-#{platform_version}-#{platform_arch}")}.deb"
       end
     end
