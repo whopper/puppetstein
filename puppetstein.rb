@@ -37,41 +37,50 @@ command = Cri::Command.define do
   # PR testing: provide pr, get info and build it
   # Option: hack in non-compiled bits. Can combine with PR testing for puppet
   # Option: use local changes rather than github -> --puppet_repo=<blah> --puppet_sha=<blah>
-  # Option: install PA:<something/master> from package on VM
   # Option: load in JSON config
-  option nil, :puppet_agent, 'specify base puppet-agent version', argument: :required
-  option :i, :install, 'install the composed puppet-agent package on a VM', argument: :optional
+  option nil, :puppet_agent, 'specify base puppet-agent version', argument: :optional
   option :p, :platform, 'which platform to install on', argument: :required
-  option nil, :puppet, 'which fork and SHA of puppet to use, separated with a :', argument: :optional
-  option nil, :facter, 'which fork and SHA of facter to use, separated with a :', argument: :optional
-  option nil, :host, 'use a pre-provisioned host. Useful for re-running tests', argument: :optional
+  option :i, :install, 'install the composed puppet-agent package on a VM', argument: :optional
+
+  option nil, :hack, 'hack mode: patch installed PA with puppet/hiera', argument: :optional
+  option :b, :build, 'build mode: force puppetstein to build a new PA', argument: :optional
+
+  option nil, :puppet, 'separated with a :', argument: :optional
+  option nil, :facter, 'separated with a :', argument: :optional
+  option nil, :hiera, 'separated with a :', argument: :optional
+
+  option nil, :pre_provisioned_host, 'use a pre-provisioned host. Useful for re-running tests', argument: :optional
+
   option :t, :tests, 'tests to run against a puppet-agent installation', argument: :optional
   option :d, :debug, 'debug mode', argument: :optional
 
   run do |opts, args, cmd|
 
     platform = Platform.new(opts.fetch(:platform))
-    platform.hostname = opts.fetch(:host) if opts[:host]
+    platform.hostname = opts.fetch(:pre_provisioned_host) if opts[:pre_provisioned_host]
 
+    ######################
+    # Option parsing: error on incompatible options
+    ######################
     install = opts.fetch(:install) if opts[:install]
+    hack_mode = opts.fetch(:hack) if opts[:hack]
+    build_mode = opts.fetch(:build) if opts[:build]
     tests = opts.fetch(:tests) if opts[:tests]
     debug = opts.fetch(:debug) if opts[:debug]
-    #platform = opts.fetch(:platform) if opts[:platform]
-    #pa_path = '/tmp/puppet-agent'
 
-    # TODO: stick these in a helper class object
-    #p.family = get_platform_family(platform)
-    #p.version = get_platform_version(platform)
-    #p.flavor = get_platform_flavor(platform)
-    #p.arch = get_platform_arch(platform)
-    #p.vanagon_arch = get_vanagon_platform_arch(platform)
+    if hack_mode && build_mode
+      log_message("ERROR: hack and build modes conflict!")
+      exit 1
+    end
 
-    if platform.hostname
-      # Just run tests on pre-provisioned host
-      if tests
-        run_tests_on_host(platform, tests)
-      end
-      exit
+    if hack_mode && opts[:facter]
+      log_message("ERROR: hack mode and custom facter build conflict!")
+      exit 1
+    end
+
+    if !install && tests
+      log_message("ERROR: must install puppet-agent on a vmpooler VM to run tests!")
+      exit 1
     end
 
     if opts[:puppet_agent]
@@ -81,7 +90,22 @@ command = Cri::Command.define do
       pa_version = 'master'
     end
 
-    if (!opts[:facter] && (opts[:puppet] || opts[:hiera])) || (!opts[:facter] && !opts[:puppet] && !opts[:hiera])
+    ######################
+    # Just run tests on pre-provisioned host if we have one, and then exit
+    ######################
+    if platform.hostname
+      if tests
+        run_tests_on_host(platform, tests)
+      end
+      exit
+    end
+
+    ######################
+    # Hack mode: Install PA package from web and patch with updates
+    # Only works for Ruby projects
+    # Or, if no components are being changed, install from web
+    ######################
+    if hack_mode || (!opts[:facter] && !opts[:puppet] && !opts[:hiera] && !build_mode)
       # Hacky bit: for Ruby projects, hack in changes rather than building new package
       # First, install specified PA version on host
       # then, figure out changed files in SHA. Download and replace existing files with them
@@ -89,61 +113,79 @@ command = Cri::Command.define do
       platform.hostname = request_vm(platform)
       install_puppet_agent_from_url_on_vm(platform, pa_version)
 
-      # install_puppet_agent_from_web_on_vm()
-      # get_changed_file_list()
       # replace_files_on_host(list, paths) ?
       # test, exit
       if opts[:puppet]
-        log_notice('Patching puppet-agent with puppet PR')
+        puppet_fork, puppet_version = opts[:puppet].split(':')
+        log_notice("Patching puppet-agent with puppet: #{puppet_fork}:#{ puppet_version}")
+        patch_project_on_host(platform, 'puppet', puppet_fork, puppet_version )
       end
 
       if opts[:hiera]
-        log_notice('Patching puppet-agent with hiera PR')
+        hiera_fork, hiera_version = opts[:hiera].split(':')
+        log_notice("Patching puppet-agent with hiera: #{hiera_fork}:#{hiera_version}")
+        patch_project_on_host('hiera', hiera_fork, hiera_version )
       end
 
       # TODO: leave big note that the VM is alive with FQDN
+      # Use case: I want to install a hacked up PA for manual inspection
       if tests
         run_tests_on_host(platform, tests)
       end
-      exit
+      exit 0
     end
 
-    # Hacking puppet-agent phase
+    ######################
+    # Build mode
+    # build a new puppet-agent package locally
+    ######################
     clone_repo('puppet-agent', pa_fork, pa_version)
 
+    ##
+    # Update the PA components with specified versions
     if opts[:puppet]
       puppet_fork, puppet_sha = opts[:puppet].split(':')
       change_component_ref("puppet", "git://github.com/#{puppet_fork}/puppet.git", puppet_sha)
-      clone_repo('puppet', puppet_fork, puppet_sha)
     else
-      clone_repo('puppet', 'puppetlabs', 'master')
+      puppet_fork = 'puppetlabs'
+      puppet_sha = 'master'
     end
+
+    clone_repo('puppet', puppet_fork, puppet_sha)
 
     if opts[:facter]
       facter_fork, facter_sha = opts[:facter].split(':')
       change_component_ref("facter", "git://github.com/#{facter_fork}/facter.git", facter_sha)
-      clone_repo('facter', facter_fork, facter_sha)
     else
-      clone_repo('facter', 'puppetlabs', 'master')
+      facter_fork = 'puppetlabs'
+      facter_sha = 'master'
     end
+
+    clone_repo('facter', facter_fork, facter_sha)
 
     if opts[:hiera]
       hiera_fork, hiera_sha = opts[:hiera].split(':')
       change_component_ref("hiera", "git://github.com/#{hiera_fork}/hiera.git", hiera_sha)
-      clone_repo('hiera', hiera_fork, hiera_sha)
     else
-      clone_repo('hiera', 'puppetlabs', 'master')
+      hiera_fork = 'puppetlabs'
+      hiera_sha = 'master'
     end
 
-    # Build phase
+    clone_repo('hiera', hiera_fork, hiera_sha)
+
+    ##
+    # Build puppet-agent
     build_puppet_agent(platform) unless debug
     package_path = get_puppet_agent_package_output_path(platform)
 
+    ##
+    # Install the newly built PA package if install option is set
     if install
       platform.hostname = request_vm(platform)
       copy_package_to_vm(platform, package_path)
       install_puppet_agent_on_vm(platform)
 
+      # Run tests if specified
       if tests
         run_tests_on_host(platform, tests)
       end

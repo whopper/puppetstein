@@ -104,7 +104,7 @@ module Puppetstein
         when 'el'
           'yum -y install'
         when 'debian'
-          'apt-get -y install'
+          'apt-get update && apt-get -y install'
       end
     end
   end

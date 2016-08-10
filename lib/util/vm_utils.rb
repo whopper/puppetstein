@@ -1,10 +1,12 @@
 #! /Users/whopper/.rbenv/shims/ruby
 
-require_relative 'log_utils.rb'
 require_relative 'platform_utils.rb'
+require_relative 'git_utils.rb'
+require_relative 'log_utils.rb'
 
-include Puppetstein::LogUtils
 include Puppetstein::PlatformUtils
+include Puppetstein::GitUtils
+include Puppetstein::LogUtils
 
 #! /usr/env/ruby
 module Puppetstein
@@ -24,6 +26,26 @@ module Puppetstein
           puts line
         end
       end
+    end
+
+    def patch_project_on_host(platform, project, project_fork, project_version)
+
+      # TODO: make helper for installing package
+      IO.popen("ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa-acceptance root@#{platform.hostname} '#{platform.package_manager_command} git'") do |io|
+        while (line = io.gets) do
+          puts line
+        end
+      end
+
+      log_notice("Patching #{project} on #{platform.hostname} with #{project_version}")
+
+      pl_dir = '/opt/puppetlabs/puppet/lib/ruby/vendor_ruby/'
+      clone_repo(project, project_fork, project_version)
+      IO.popen("scp -r -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa-acceptance /tmp/#{project}/lib root@#{platform.hostname}:/root") do |io|
+        # Do nothing...
+      end
+
+      IO.popen("ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa-acceptance root@#{platform.hostname} '/bin/cp -rf /root/lib/* #{pl_dir}'")
     end
 
     def install_puppet_agent_on_vm(platform)

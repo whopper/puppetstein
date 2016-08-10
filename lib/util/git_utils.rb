@@ -14,6 +14,8 @@ module Puppetstein
         log_notice("cloned #{project}#{sha} to /tmp/#{project}")
       else
         g = Git.open("/tmp/#{project}")
+        g.branch('tmp').checkout
+        g.branch(sha).delete
 
         remote_exists = false
         g.remotes.each do |remote|
@@ -22,7 +24,8 @@ module Puppetstein
 
         g.add_remote(git_fork, "git@github.com:#{git_fork}/#{project}.git") unless remote_exists
         g.remote(git_fork).fetch
-        g.branch(sha).checkout
+
+        IO.popen("pushd /tmp/#{project} && git checkout --track #{git_fork}/#{sha} && popd")
         log_notice("Found local checkout of #{project} in /tmp/#{project}. Using #{git_fork}:#{sha}")
       end
     end
