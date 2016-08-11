@@ -52,7 +52,6 @@ command = Cri::Command.define do
   option nil, :pre_provisioned_host, 'use a pre-provisioned host. Useful for re-running tests', argument: :optional
 
   option :t, :tests, 'tests to run against a puppet-agent installation', argument: :optional
-  option :d, :debug, 'debug mode', argument: :optional
 
   run do |opts, args, cmd|
 
@@ -66,20 +65,19 @@ command = Cri::Command.define do
     hack_mode = opts.fetch(:hack) if opts[:hack]
     build_mode = opts.fetch(:build) if opts[:build]
     tests = opts.fetch(:tests) if opts[:tests]
-    debug = opts.fetch(:debug) if opts[:debug]
 
     if hack_mode && build_mode
-      log_message("ERROR: hack and build modes conflict!")
+      log_notice("ERROR: hack and build modes conflict!")
       exit 1
     end
 
     if hack_mode && opts[:facter]
-      log_message("ERROR: hack mode and custom facter build conflict!")
+      log_notice("ERROR: hack mode and custom facter build conflict!")
       exit 1
     end
 
-    if !install && tests
-      log_message("ERROR: must install puppet-agent on a vmpooler VM to run tests!")
+    if !install && !opts[:pre_provisioned_host] && tests
+      log_notice("ERROR: must install puppet-agent on a vmpooler VM to run tests!")
       exit 1
     end
 
@@ -175,7 +173,7 @@ command = Cri::Command.define do
 
     ##
     # Build puppet-agent
-    build_puppet_agent(platform) unless debug
+    build_puppet_agent(platform) if build_mode
     package_path = get_puppet_agent_package_output_path(platform)
 
     ##
@@ -206,7 +204,7 @@ def run_tests_on_host(platform, tests)
   test_groups = tests.split(',')
   test_groups.each do |test|
     project, test = test.split(':')
-    IO.popen("export RUBYLIB=/tmp/#{project}/acceptance/lib && pushd /tmp/#{project}/acceptance && bundle install && bundle exec beaker --hosts /tmp/puppet-agent/hosts.yml --tests #{test} --no-provision always --keyfile=~/.ssh/id_rsa-acceptance --debug") do |io|
+    IO.popen("export RUBYLIB=/tmp/#{project}/acceptance/lib && pushd /tmp/#{project}/acceptance && bundle install && bundle exec beaker --hosts /tmp/puppet-agent/hosts.yml --tests #{test} --no-provision --keyfile=~/.ssh/id_rsa-acceptance --debug") do |io|
       while (line = io.gets) do
         puts line
       end

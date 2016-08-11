@@ -24,7 +24,7 @@ module Puppetstein
 
         g.add_remote(git_fork, "git@github.com:#{git_fork}/#{project}.git") unless remote_exists
         g.remote(git_fork).fetch
-
+        # TODO: if tag, just check it out
         IO.popen("pushd /tmp/#{project} && git checkout --track #{git_fork}/#{sha} && popd")
         log_notice("Found local checkout of #{project} in /tmp/#{project}. Using #{git_fork}:#{sha}")
       end
