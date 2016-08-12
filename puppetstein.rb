@@ -33,11 +33,8 @@ command = Cri::Command.define do
   end
 
   # TODO:
-  # assume url, try and if 404, then build
   # don't sort options
   # build forces a build - always install
-  # allow installing locally built package after
-  # fix git stuff - shallow clone
   # use mktemp
   # allow path to tests
   # add package installer helper / setup steps
@@ -69,6 +66,16 @@ command = Cri::Command.define do
     package = opts.fetch(:package) if opts[:package]
     tests = opts.fetch(:tests) if opts[:tests]
     platform.keyfile = opts.fetch(:keyfile) if opts[:keyfile]
+
+    if build_mode && platform.hostname
+      log_notice("ERROR: build and preprovisioned host modes conflict!")
+      exit 1
+    end
+
+    if build_mode && package
+      log_notice("ERROR: build mode and pre-built package modes conflict!")
+      exit 1
+    end
 
     if opts[:puppet_agent]
       pa_fork, pa_version = opts[:puppet_agent].split(':')
