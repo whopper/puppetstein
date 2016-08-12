@@ -122,7 +122,13 @@ command = Cri::Command.define do
       if result == 0
         patchable_projects.each do |project|
           if opts[:"#{project}"]
-            project_fork, project_version = opts[:"#{project}"].split(':')
+            if pr = /pr_(\d+)/.match(opts[:"#{project}"])
+              # This is a pull request number. Get the fork and branch
+              project_fork, project_version = get_ref_from_pull_request(project, pr[1]).split(':')
+            else
+              project_fork, project_version = opts[:"#{project}"].split(':')
+            end
+
             patch_project_on_host(platform, project, project_fork, project_version )
           end
         end
