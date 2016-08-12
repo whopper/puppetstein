@@ -21,37 +21,49 @@ module Puppetstein
       match[1]
     end
 
-    def copy_package_to_vm(platform, package_path)
-      IO.popen("scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa-acceptance #{package_path} root@#{platform.hostname}:/root") do |io|
+    def copy_package_to_vm(platform, keyfile, package_path)
+      # TODO: add cmd building method and IO.popen method
+      cmd = "scp -o StrictHostKeyChecking=no "
+      cmd = cmd + "-i #{keyfile} " if keyfile
+      cmd = cmd + "#{package_path} root@#{platform.hostname}:/root"
+
+      IO.popen(cmd) do |io|
         while (line= io.gets) do
           puts line
         end
       end
     end
 
-    def patch_project_on_host(platform, project, project_fork, project_version)
-
-      # TODO: make helper for installing package
-      IO.popen("ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa-acceptance root@#{platform.hostname} '#{platform.package_manager_command} git'") do |io|
-        while (line = io.gets) do
-          puts line
-        end
-      end
-
+    def patch_project_on_host(platform, keyfile, project, project_fork, project_version)
       log_notice("Patching #{project} on #{platform.hostname} with #{project_version}")
-
       pl_dir = '/opt/puppetlabs/puppet/lib/ruby/vendor_ruby/'
       clone_repo(project, project_fork, project_version)
-      IO.popen("scp -r -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa-acceptance /tmp/#{project}/lib root@#{platform.hostname}:/root") do |io|
+
+      scp_cmd = "scp -r -o StrictHostKeyChecking=no "
+      scp_cmd = scp_cmd + "-i #{keyfile} " if keyfile
+      scp_cmd = scp_cmd + "/tmp/#{project}/lib root@#{platform.hostname}:/root"
+
+      IO.popen(scp_cmd) do |io|
         # Do nothing...
       end
 
-      IO.popen("ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa-acceptance root@#{platform.hostname} '/bin/cp -rf /root/lib/* #{pl_dir}'")
+      install_cmd = "ssh -o StrictHostKeyChecking=no "
+      install_cmd = install_cmd + "-i #{keyfile} " if keyfile
+      install_cmd = install_cmd + "root@#{platform.hostname} '/bin/cp -rf /root/lib/* #{pl_dir}'"
+
+      IO.popen(install_cmd)
     end
 
-    def install_puppet_agent_on_vm(platform)
-      log_notice("Installing puppet-agent <VERSION>on#{platform.hostname}")
-      IO.popen("ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa-acceptance root@#{platform.hostname} '#{platform.package_command} /root/puppet-agent* && ln -s /opt/puppetlabs/bin/* /usr/bin'") do |io|
+    def install_puppet_agent_on_vm(platform, keyfile)
+      # TODO: don't just assume we're installing /root/pkg
+      log_notice("Installing puppet-agent on #{platform.hostname}")
+
+      cmd = "ssh -o StrictHostKeyChecking=no "
+      cmd = cmd + "-i #{keyfile} " if keyfile
+      cmd = cmd + "root@#{platform.hostname} '#{platform.package_command} /root/puppet-agent* " +
+                  "&& ln -s /opt/puppetlabs/bin/* /usr/bin'"
+
+      IO.popen(cmd) do |io|
         while (line = io.gets) do
           puts line
         end
@@ -59,7 +71,7 @@ module Puppetstein
       log_notice("Done!")
     end
 
-    def install_puppet_agent_from_url_on_vm(platform, pa_version)
+    def install_puppet_agent_from_url_on_vm(platform, keyfile, pa_version)
       base_url = 'http://builds.puppetlabs.lan/puppet-agent'
       case platform.family
         when 'el'
@@ -79,20 +91,18 @@ module Puppetstein
         1
       end
 
-      # TODO: make helper for installing package
-      IO.popen("ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa-acceptance root@#{platform.hostname} '#{platform.package_manager_command} wget'") do |io|
+      cmd = "ssh -o StrictHostKeyChecking=no "
+      cmd = cmd + "-i #{keyfile} " if keyfile
+      cmd = cmd + "root@#{platform.hostname} 'wget -r -nH -nd -R \'*bundle*\' #{url} " +
+                  "-P /root -A \'*#{package_regex}*\' -o /dev/null'"
+
+      IO.popen(cmd) do |io|
         while (line = io.gets) do
           puts line
         end
       end
 
-      IO.popen("ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa-acceptance root@#{platform.hostname} 'wget -r -nH -nd -R \'*bundle*\' #{url} -P /root -A \'*#{package_regex}*\' -o /dev/null'") do |io|
-        while (line = io.gets) do
-          puts line
-        end
-      end
-
-      install_puppet_agent_on_vm(platform)
+      install_puppet_agent_on_vm(platform, keyfile)
       0
     end
   end
