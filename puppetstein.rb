@@ -68,7 +68,7 @@ command = Cri::Command.define do
     build_mode = opts.fetch(:build) if opts[:build]
     package = opts.fetch(:package) if opts[:package]
     tests = opts.fetch(:tests) if opts[:tests]
-    keyfile = opts.fetch(:keyfile) if opts[:keyfile]
+    platform.keyfile = opts.fetch(:keyfile) if opts[:keyfile]
 
     if opts[:puppet_agent]
       pa_fork, pa_version = opts[:puppet_agent].split(':')
@@ -95,7 +95,7 @@ command = Cri::Command.define do
     # If we already have a package, install it
     ######################
     if package
-      copy_package_to_vm(platform, package)
+      remote_copy(platform, package, '/root')
       install_puppet_agent_on_vm(platform)
       installed = true
     end
@@ -109,14 +109,14 @@ command = Cri::Command.define do
       # Patch ruby projects rather than build new package
       patchable_projects = ['puppet', 'hiera']
 
-      result = install_puppet_agent_from_url_on_vm(platform, keyfile, pa_version)
+      result = install_puppet_agent_from_url_on_vm(platform, pa_version)
 
       # If we successfully grabbed PA from the web, we can patch. Otherwise, we build
       if result == 0
         patchable_projects.each do |project|
           if opts[:"#{project}"]
             project_fork, project_version = opts[:"#{project}"].split(':')
-            patch_project_on_host(platform, keyfile, project, project_fork, project_version )
+            patch_project_on_host(platform, project, project_fork, project_version )
           end
         end
 
@@ -150,22 +150,22 @@ command = Cri::Command.define do
 
       ##
       # Build puppet-agent
-      build_puppet_agent(platform, keyfile) #TODO: install existing local build rather than new
+      build_puppet_agent(platform)  #TODO: install existing local build rather than new
       package_path = save_puppet_agent_artifact(platform)
-      copy_package_to_vm(platform, keyfile, package_path)
-      install_puppet_agent_on_vm(platform, keyfile)
+      remote_copy(platform, package_path, '/root')
+      install_puppet_agent_on_vm(platform)
       installed = true
     end
 
     # Run tests if specified
     if tests && installed
-      run_tests_on_host(platform, keyfile, tests)
+      run_tests_on_host(platform, tests)
     end
     #cleanup
   end
 end
 
-def run_tests_on_host(platform, keyfile, tests)
+def run_tests_on_host(platform, tests)
   hosts_file = '/tmp/hosts.yml'
   generate_host_config(platform, hosts_file)
 
@@ -174,16 +174,13 @@ def run_tests_on_host(platform, keyfile, tests)
     project, test = test.split(':')
     log_notice("Cloning #{project} to obtain tests...")
     clone_repo(project, 'puppetlabs', 'master')
+
     cmd = "export RUBYLIB=/tmp/#{project}/acceptance/lib && pushd /tmp/#{project}/acceptance " +
           "&& bundle install && bundle exec beaker --hosts #{hosts_file} " +
           "--tests #{test} --no-provision --debug"
-    cmd = cmd + " --keyfile=#{keyfile}" if keyfile
+    cmd = cmd + " --keyfile=#{platform.keyfile}" if platform.keyfile
 
-    IO.popen(cmd) do |io|
-      while (line = io.gets) do
-        puts line
-      end
-    end
+    execute(cmd)
   end
 end
 
@@ -195,18 +192,14 @@ def change_component_ref(component_name, url, ref)
   log_notice("updated /tmp/puppet-agent/configs/components/#{component_name}.json with url #{url} and ref #{ref}")
 end
 
-def build_puppet_agent(platform, keyfile)
+def build_puppet_agent(platform)
   log_notice("building puppet-agent for #{platform.family} #{platform.version} #{platform.arch}")
 
   cmd = "pushd /tmp/puppet-agent && bundle install && bundle exec build puppet-agent" +
         " #{platform.family}-#{platform.version}-#{platform.vanagon_arch} && popd"
 
-  cmd = cmd + " VANAGON_SSH_KEY=#{keyfile}" if keyfile
-  IO.popen(cmd) do |io|
-    while (line = io.gets) do
-      puts line
-    end
-  end
+  cmd = cmd + " VANAGON_SSH_KEY=#{keyfile}" if platform.keyfile
+  execute(cmd)
 end
 
 def cleanup

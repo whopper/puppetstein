@@ -13,6 +13,7 @@ module Puppetstein
     attr_accessor :package_command
     attr_accessor :package_manager_command
     attr_accessor :hostname
+    attr_accessor :keyfile
 
     def initialize(platform)
       @string       = platform
