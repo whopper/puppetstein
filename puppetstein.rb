@@ -6,7 +6,6 @@ require_relative 'lib/platform.rb'
 require_relative 'lib/presuite.rb'
 require_relative 'lib/util/platform_utils.rb'
 require_relative 'lib/util/git_utils.rb'
-require_relative 'lib/util/vm_utils.rb'
 require_relative 'lib/util/log_utils.rb'
 require 'cri'
 require 'git'
@@ -16,7 +15,6 @@ include Puppetstein
 include Puppetstein::Presuite
 include Puppetstein::PlatformUtils
 include Puppetstein::GitUtils
-include Puppetstein::VMUtils
 include Puppetstein::LogUtils
 
 command = Cri::Command.define do
