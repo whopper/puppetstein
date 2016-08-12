@@ -14,6 +14,7 @@ module Puppetstein
     attr_accessor :package_manager_command
     attr_accessor :hostname
     attr_accessor :keyfile
+    attr_accessor :local_tmpdir # scratch space for building puppet-agent locally
 
     def initialize(platform)
       @string       = platform
@@ -24,6 +25,7 @@ module Puppetstein
       @vanagon_arch = get_vanagon_arch(@string)
       @package_command         = get_package_command(@family)
       @package_manager_command = get_package_manager_command(@family)
+      @local_tmpdir = tmpdir
     end
 
     def get_platform_family(platform_string)
@@ -107,6 +109,10 @@ module Puppetstein
         when 'debian'
           'apt-get update && apt-get -y install'
       end
+    end
+
+    def tmpdir
+      `mktemp -d /tmp/puppetstein.XXXXX`.chomp!
     end
   end
 end

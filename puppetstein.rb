@@ -35,7 +35,6 @@ command = Cri::Command.define do
   # TODO:
   # don't sort options
   # build forces a build - always install
-  # use mktemp
   # allow path to tests
 
   # Use puppetserver
@@ -94,8 +93,10 @@ command = Cri::Command.define do
     ######################
     # Request a VM to use for the duration of the run
     ######################
-    host.hostname = request_vm(host)
-    install_prerequisite_packages(host)
+    if !installed
+      host.hostname = request_vm(host)
+      install_prerequisite_packages(host)
+    end
 
     ######################
     # If we already have a package, install it
@@ -144,7 +145,7 @@ command = Cri::Command.define do
     ######################
     if !installed
       log_notice("Building puppet-agent: #{pa_fork}:#{pa_version}")
-      clone_repo('puppet-agent', pa_fork, pa_version)
+      clone_repo('puppet-agent', pa_fork, pa_version, host.local_tmpdir)
 
       ##
       # Update the PA components with specified versions
@@ -157,7 +158,7 @@ command = Cri::Command.define do
           project_sha = 'master'
         end
 
-        clone_repo(project, project_fork, project_sha)
+        clone_repo(project, project_fork, project_sha, host.local_tmpdir)
       end
 
       ##
@@ -178,16 +179,16 @@ command = Cri::Command.define do
 end
 
 def run_tests_on_host(host, tests)
-  hosts_file = '/tmp/hosts.yml'
+  hosts_file = "#{host.local_tmpdir}/hosts.yml"
   generate_host_config(host, hosts_file)
 
   test_groups = tests.split(',')
   test_groups.each do |test|
     project, test = test.split(':')
     log_notice("Cloning #{project} to obtain tests...")
-    clone_repo(project, 'puppetlabs', 'master')
+    clone_repo(project, 'puppetlabs', 'master', host.local_tmpdir)
 
-    cmd = "export RUBYLIB=/tmp/#{project}/acceptance/lib && pushd /tmp/#{project}/acceptance " +
+    cmd = "export RUBYLIB=#{host.local_tmpdir}/#{project}/acceptance/lib && pushd #{host.local_tmpdir}/#{project}/acceptance " +
           "&& bundle install && bundle exec beaker --hosts #{hosts_file} " +
           "--tests #{test} --no-provision --debug"
     cmd = cmd + " --keyfile=#{host.keyfile}" if host.keyfile
@@ -200,14 +201,14 @@ def change_component_ref(component_name, url, ref)
   new_ref = Hash.new
   new_ref['url'] = url
   new_ref['ref'] = ref
-  File.write("/tmp/puppet-agent/configs/components/#{component_name}.json", JSON.pretty_generate(new_ref))
-  log_notice("updated /tmp/puppet-agent/configs/components/#{component_name}.json with url #{url} and ref #{ref}")
+  File.write("#{host.local_tmpdir}/puppet-agent/configs/components/#{component_name}.json", JSON.pretty_generate(new_ref))
+  log_notice("updated #{host.local_tmpdir}/puppet-agent/configs/components/#{component_name}.json with url #{url} and ref #{ref}")
 end
 
 def build_puppet_agent(host)
   log_notice("building puppet-agent for #{host.family} #{host.version} #{host.arch}")
 
-  cmd = "pushd /tmp/puppet-agent && bundle install && bundle exec build puppet-agent" +
+  cmd = "pushd #{host.local_tmpdir}/puppet-agent && bundle install && bundle exec build puppet-agent" +
         " #{host.family}-#{host.version}-#{host.vanagon_arch} && popd"
 
   cmd = cmd + " VANAGON_SSH_KEY=#{host.keyfile}" if host.keyfile
@@ -215,7 +216,7 @@ def build_puppet_agent(host)
 end
 
 def cleanup
-  `rm -rf /tmp/puppet-agent`
+  `rm -rf #{host.local_tmpdir}/puppet-agent`
 end
 
 command.run(ARGV)

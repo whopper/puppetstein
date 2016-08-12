@@ -26,7 +26,7 @@ module Puppetstein
     end
 
     def remote_copy(host, local_file, remote_path)
-      cmd = "scp -o StrictHostKeyChecking=no "
+      cmd = "scp -r -o StrictHostKeyChecking=no "
       cmd = cmd + "-i #{host.keyfile} " if host.keyfile
       cmd = cmd + "#{local_file} root@#{host.hostname}:#{remote_path}"
       execute(cmd)
@@ -42,9 +42,9 @@ module Puppetstein
 
     def patch_project_on_host(host, project, project_fork, project_version)
       log_notice("Patching #{project} on #{host.hostname} with #{project_version}")
-      clone_repo(project, project_fork, project_version)
+      clone_repo(project, project_fork, project_version, host.local_tmpdir)
 
-      remote_copy(host, "/tmp/#{project}/lib", '/root')
+      remote_copy(host, "#{host.local_tmpdir}/#{project}/lib", '/root')
       pl_dir = '/opt/puppetlabs/puppet/lib/ruby/vendor_ruby/'
       remote_command(host, "/bin/cp -rf /root/lib/* #{pl_dir}")
     end
@@ -81,7 +81,7 @@ module Puppetstein
       0
     end
 
-    def generate_host_config(host, path='/tmp/hosts.yml')
+    def generate_host_config(host, path="#{host.local_tmpdir}/hosts.yml")
       if host.family == 'el'
         os = host.flavor
       else
@@ -92,18 +92,18 @@ module Puppetstein
     end
 
     def save_puppet_agent_artifact(host)
-      desc = `git --git-dir=/tmp/puppet-agent/.git describe`
+      desc = `git --git-dir=#{host.local_tmpdir}/puppet-agent/.git describe`
       case host.family
         when 'el'
         package = "puppet-agent-#{desc.gsub('-','.').chomp}-1.el#{host.version}.#{host.arch}.rpm"
-        path = "/tmp/puppet-agent/output/el/#{host.version}/PC1/#{host.arch}/#{package}"
+        path = "#{host.local_tmpdir}/puppet-agent/output/el/#{host.version}/PC1/#{host.arch}/#{package}"
         when 'debian'
         package = "puppet-agent_#{desc.gsub('-''.').chomp}-1#{host.flavor}_#{host.vanagon_arch}.deb"
-        path = "/tmp/puppet-agent/output/deb/#{host.flavor}/PC1/#{package}"
+        path = "#{host.local_tmpdir}/puppet-agent/output/deb/#{host.flavor}/PC1/#{package}"
       end
 
-      execute("mv #{path} /tmp")
-      "/tmp/#{package}"
+      execute("mv #{path} #{host.local_tmpdir}")
+      "#{host.local_tmpdir}/#{package}"
     end
   end
 end
