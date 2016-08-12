@@ -40,6 +40,7 @@ command = Cri::Command.define do
   # fix git stuff - shallow clone
   # use mktemp
   # allow path to tests
+  # add package installer helper / setup steps
 
   # Use puppetserver
   # PR testing: provide pr, get info and build it
@@ -48,6 +49,7 @@ command = Cri::Command.define do
   option nil, :puppet_agent, 'specify base puppet-agent version', argument: :optional
   option :p, :platform, 'which platform to install on', argument: :required
   option :b, :build, 'build mode: force puppetstein to build a new PA', argument: :optional
+  option nil, :package, 'path to a puppet-agent package to install', argument: :optional
 
   # TODO: if file: then use local checkout
   option nil, :puppet, 'separated with a :', argument: :optional
@@ -64,6 +66,7 @@ command = Cri::Command.define do
     platform = Platform.new(opts.fetch(:platform))
     platform.hostname = opts.fetch(:host) if opts[:host]
     build_mode = opts.fetch(:build) if opts[:build]
+    package = opts.fetch(:package) if opts[:package]
     tests = opts.fetch(:tests) if opts[:tests]
     keyfile = opts.fetch(:keyfile) if opts[:keyfile]
 
@@ -74,14 +77,22 @@ command = Cri::Command.define do
       pa_version = 'master'
     end
 
+    installed = false
     ######################
-    # Just run tests on pre-provisioned host if we have one, and then exit
+    # Just run tests on pre-provisioned host if we have one
     ######################
     if platform.hostname
-      if tests
-        run_tests_on_host(platform, keyfile, tests)
-      end
-      exit
+      installed = true
+    end
+
+    ######################
+    # If we already have a package, install it
+    ######################
+    if package
+      platform.hostname = request_vm(platform)
+      copy_package_to_vm(platform, package)
+      install_puppet_agent_on_vm(platform)
+      installed = true
     end
 
     ######################
@@ -89,83 +100,87 @@ command = Cri::Command.define do
     # Only works for Ruby projects
     # Or, if no components are being changed, install from web
     ######################
-    if (!opts[:facter] && !build_mode)
+    if (!opts[:facter] && !build_mode && !installed)
       # Patch ruby projects rather than build new package
       patchable_projects = ['puppet', 'hiera']
       platform.hostname = request_vm(platform)
-      install_puppet_agent_from_url_on_vm(platform, pa_version)
 
-      patchable_projects.each do |project|
-        if opts[:"#{project}"]
-          project_fork, project_version = opts[:"#{project}"].split(':')
-          log_notice("Patching puppet-agent with #{project}: #{project_fork}:#{ project_version}")
-          patch_project_on_host(platform, project, project_fork, project_version )
+      result = install_puppet_agent_from_url_on_vm(platform, pa_version)
+
+      # If we successfully grabbed PA from the web, we can patch. Otherwise, we build
+      if result == 0
+        patchable_projects.each do |project|
+          if opts[:"#{project}"]
+            project_fork, project_version = opts[:"#{project}"].split(':')
+            log_notice("Patching puppet-agent with #{project}: #{project_fork}:#{ project_version}")
+            patch_project_on_host(platform, project, project_fork, project_version )
+          end
         end
-      end
 
-      # TODO: leave big note that the VM is alive with FQDN
-      # Use case: I want to install a hacked up PA for manual inspection
-      if tests
-        run_tests_on_host(platform, keyfile, tests)
+        # TODO: leave big note that the VM is alive with FQDN
+        # Use case: I want to install a hacked up PA for manual inspection
+        installed = true
       end
-      exit 0
     end
 
     ######################
     # Build mode
     # build a new puppet-agent package locally
     ######################
-    clone_repo('puppet-agent', pa_fork, pa_version)
+    if !installed
+      log_notice("Building puppet-agent: #{pa_fork}:#{pa_version}")
+      clone_repo('puppet-agent', pa_fork, pa_version)
 
-    ##
-    # Update the PA components with specified versions
-    ['puppet', 'facter', 'hiera'].each do |project|
-      if opts[:"#{project}"]
-        project_fork, project_sha = opts[:"#{project}"].split(':')
-        change_component_ref(project, "git://github.com/#{project_fork}/project.git", project_sha)
-      else
-        project_fork = 'projectlabs'
-        project_sha = 'master'
+      ##
+      # Update the PA components with specified versions
+      ['puppet', 'facter', 'hiera'].each do |project|
+        if opts[:"#{project}"]
+          project_fork, project_sha = opts[:"#{project}"].split(':')
+          change_component_ref(project, "git://github.com/#{project_fork}/project.git", project_sha)
+        else
+          project_fork = 'puppetlabs'
+          project_sha = 'master'
+        end
+
+        clone_repo(project, project_fork, project_sha)
       end
 
-      clone_repo(project, project_fork, project_sha)
+      ##
+      # Build puppet-agent
+      build_puppet_agent(platform, keyfile) #TODO: install existing local build rather than new
+      package_path = save_puppet_agent_artifact(platform)
+      platform.hostname = request_vm(platform)
+      copy_package_to_vm(platform, package_path)
+      install_puppet_agent_on_vm(platform)
+      installed = true
     end
 
-    ##
-    # Build puppet-agent
-    #build_puppet_agent(platform, keyfile) #TODO: install existing local build rather than new
-    package_path = get_puppet_agent_package_output_path(platform)
-    platform.hostname = request_vm(platform)
-    copy_package_to_vm(platform, package_path)
-    install_puppet_agent_on_vm(platform)
-
     # Run tests if specified
-    if tests
-      run_tests_on_host(platform, tests)
+    if tests && installed
+      run_tests_on_host(platform, keyfile, tests)
     end
     #cleanup
   end
 end
 
 def run_tests_on_host(platform, keyfile, tests)
+  log_notice("Cloning repositories to obtain tests...")
   ['puppet', 'facter', 'hiera'].each do |project|
     clone_repo(project, 'puppetlabs', 'master')
   end
 
-  if platform.family == 'el'
-    os = platform.flavor
-  else
-    os = platform.family
-  end
+  hosts_file = '/tmp/hosts.yml'
+  generate_host_config(platform, hosts_file)
 
-  IO.popen("bundle exec beaker-hostgenerator #{os}#{platform.version}-64ma{hostname=#{platform.hostname}.delivery.puppetlabs.net} > /tmp/hosts.yml")
   test_groups = tests.split(',')
   test_groups.each do |test|
     project, test = test.split(':')
     cmd = "export RUBYLIB=/tmp/#{project}/acceptance/lib && pushd /tmp/#{project}/acceptance " +
-          "RUBYLIB=/tmp/#{project}/acceptance/lib && pushd /tmp/#{project}/acceptance " +
-          "--no-provision --debug"
+          "&& bundle install && bundle exec beaker --hosts #{hosts_file} " +
+          "--tests #{test} --no-provision --debug"
     cmd = cmd + " --keyfile=#{keyfile}" if keyfile
+
+    puts cmd
 
     IO.popen(cmd) do |io|
       while (line = io.gets) do

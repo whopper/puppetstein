@@ -3,6 +3,7 @@
 require_relative 'platform_utils.rb'
 require_relative 'git_utils.rb'
 require_relative 'log_utils.rb'
+require "net/http"
 
 include Puppetstein::PlatformUtils
 include Puppetstein::GitUtils
@@ -69,6 +70,15 @@ module Puppetstein
           package_regex = "puppet-agent*#{platform.flavor}_#{platform.vanagon_arch}*"
       end
 
+      url = URI.parse(url)
+      req = Net::HTTP.new(url.host, url.port)
+      res = req.request_head(url.path)
+
+      if res.code != "200"
+        puts "Failed to download puppet-agent from builds.puppetlabs.lan"
+        1
+      end
+
       # TODO: make helper for installing package
       IO.popen("ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa-acceptance root@#{platform.hostname} '#{platform.package_manager_command} wget'") do |io|
         while (line = io.gets) do
@@ -83,6 +93,7 @@ module Puppetstein
       end
 
       install_puppet_agent_on_vm(platform)
+      0
     end
   end
 end

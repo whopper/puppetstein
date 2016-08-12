@@ -8,14 +8,20 @@ module Puppetstein
   module GitUtils
 
     def clone_repo(project, git_fork, sha='master')
-      if !File.exists?("/tmp/#{project}")
-        g = Git.clone("git@github.com:#{git_fork}/#{project}.git", project, :path => '/tmp/')
-        g.branch(sha).checkout
-        log_notice("cloned #{project}#{sha} to /tmp/#{project}")
+      if File.exists?("/tmp/#{project}")
+        IO.popen("rm -rf /tmp/#{project}") do |io|
+          while (line = io.gets) do
+            puts line
+          end
+        end
+      end
+
+      g = Git.clone("git@github.com:#{git_fork}/#{project}.git", project, :path => '/tmp/')
+      g.branch(sha).checkout
+      log_notice("cloned #{project}:#{sha} to /tmp/#{project}")
+=begin
       else
         g = Git.open("/tmp/#{project}")
-        g.branch('tmp').checkout
-        g.branch(sha).delete
 
         remote_exists = false
         g.remotes.each do |remote|
@@ -24,10 +30,15 @@ module Puppetstein
 
         g.add_remote(git_fork, "git@github.com:#{git_fork}/#{project}.git") unless remote_exists
         g.remote(git_fork).fetch
-        # TODO: if tag, just check it out
-        IO.popen("pushd /tmp/#{project} && git checkout --track #{git_fork}/#{sha} && popd")
-        log_notice("Found local checkout of #{project} in /tmp/#{project}. Using #{git_fork}:#{sha}")
+
+        if sha =~ /\d+\.\d+\.(\d+)?/
+          IO.popen("pushd /tmp/#{project} && git checkout #{sha}")
+        else
+          IO.popen("pushd /tmp/#{project} && git checkout --track #{git_fork}/#{sha} && popd")
+          IO.popen("git reset --hard #{git_fork}/#{git_sha}")
+        end
       end
+=end
     end
   end
 end
