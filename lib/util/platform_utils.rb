@@ -19,6 +19,8 @@ module Puppetstein
     end
 
     def remote_command(host, command)
+      puts "COMMAND: #{command}"
+      puts "KEYFILE: #{host.keyfile}"
       cmd = "ssh -o StrictHostKeyChecking=no "
       cmd = cmd + "-i #{host.keyfile} " if host.keyfile
       cmd = cmd + "root@#{host.hostname} '#{command}'"

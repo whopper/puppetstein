@@ -5,6 +5,7 @@
 module Puppetstein
   class Host
     attr_accessor :string # platform
+    attr_accessor :family_string
     attr_accessor :family
     attr_accessor :flavor
     attr_accessor :version
@@ -17,15 +18,16 @@ module Puppetstein
     attr_accessor :local_tmpdir # scratch space for building puppet-agent locally
 
     def initialize(platform)
-      @string       = platform
-      @family       = get_platform_family(@string)
-      @flavor       = get_platform_flavor(@string)
-      @version      = get_platform_version(@string)
-      @arch         = get_platform_arch(@string)
-      @vanagon_arch = get_vanagon_arch(@string)
+      @string        = platform
+      @family        = get_platform_family(@string)
+      @flavor        = get_platform_flavor(@string)
+      @version       = get_platform_version(@string)
+      @arch          = get_platform_arch(@string)
+      @vanagon_arch  = get_vanagon_arch(@string)
       @package_command         = get_package_command(@family)
       @package_manager_command = get_package_manager_command(@family)
       @local_tmpdir = tmpdir
+      @family_string = "#{@family}-#{@version}-#{@arch}"
     end
 
     def get_platform_family(platform_string)

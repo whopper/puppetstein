@@ -3,7 +3,7 @@
 #! /usr/env/ruby
 
 require_relative 'lib/host.rb'
-require_relative 'lib/presuite.rb'
+require_relative 'lib/pre-suite.rb'
 require_relative 'lib/util/platform_utils.rb'
 require_relative 'lib/util/git_utils.rb'
 require_relative 'lib/util/log_utils.rb'
@@ -33,13 +33,11 @@ command = Cri::Command.define do
   end
 
   # TODO:
-  # don't sort options
-  # build forces a build - always install
+  # fix the ruby thing
   # allow path to tests
 
   # Use puppetserver
   # Option: use local changes rather than github -> --puppet_repo=<blah> --puppet_sha=<blah>
-  # Option: load in JSON config
 
   option nil, :puppet_agent, 'specify base puppet-agent version', argument: :optional
   option :p, :platform, 'which platform to install on', argument: :required
@@ -58,12 +56,14 @@ command = Cri::Command.define do
 
   run do |opts, args, cmd|
 
+    master = Host.new('redhat-7-x86_64')
     host = Host.new(opts.fetch(:platform))
     host.hostname = opts.fetch(:host) if opts[:host]
     build_mode = opts.fetch(:build) if opts[:build]
     package = opts.fetch(:package) if opts[:package]
     tests = opts.fetch(:tests) if opts[:tests]
     host.keyfile = opts.fetch(:keyfile) if opts[:keyfile]
+    master.keyfile = opts.fetch(:keyfile) if opts[:keyfile]
 
     if build_mode && platform.hostname
       log_notice("ERROR: build and preprovisioned host modes conflict!")
@@ -95,7 +95,9 @@ command = Cri::Command.define do
     ######################
     if !installed
       host.hostname = request_vm(host)
+      master.hostname = request_vm(master)
       install_prerequisite_packages(host)
+      setup_puppetserver_on_host(master, pa_version)
     end
 
     ######################
@@ -134,7 +136,6 @@ command = Cri::Command.define do
         end
 
         # TODO: leave big note that the VM is alive with FQDN
-        # Use case: I want to install a hacked up PA for manual inspection
         installed = true
       end
     end
@@ -168,6 +169,11 @@ command = Cri::Command.define do
       remote_copy(host, package_path, '/root')
       install_puppet_agent_on_vm(host)
       installed = true
+    end
+
+    # Get master and agent talking to each other
+    if installed
+      sign_agent_cert_on_master(host, master)
     end
 
     # Run tests if specified

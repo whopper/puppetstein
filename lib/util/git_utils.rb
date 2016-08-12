@@ -14,7 +14,8 @@ module Puppetstein
       end
 
       g = Git.clone("git@github.com:#{git_fork}/#{project}.git", project, :path => "#{tmpdir}/")
-      g.branch(sha).checkout
+      g.fetch
+      g.checkout(sha)
       log_notice("cloned #{project}:#{sha} to #{tmpdir}/#{project}")
     end
 
