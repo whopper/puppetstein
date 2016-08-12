@@ -3,7 +3,7 @@
 #! /usr/env/ruby
 
 module Puppetstein
-  class Platform
+  class Host
     attr_accessor :string # platform
     attr_accessor :family
     attr_accessor :flavor

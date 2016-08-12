@@ -10,14 +10,14 @@ include Puppetstein::LogUtils
 
 module Puppetstein
   module Presuite
-    def install_prerequisite_packages(platform)
+    def install_prerequisite_packages(host)
       ['wget', 'git'].each do |pkg|
-        install_package_on_host(platform, pkg)
+        install_package_on_host(host, pkg)
       end
     end
 
-    def install_package_on_host(platform, pkg_name)
-      remote_command(platform, "#{platform.package_manager_command} #{pkg_name}")
+    def install_package_on_host(host, pkg_name)
+      remote_command(host, "#{host.package_manager_command} #{pkg_name}")
     end
   end
 end

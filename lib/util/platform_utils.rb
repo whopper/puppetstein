@@ -18,53 +18,53 @@ module Puppetstein
       end
     end
 
-    def remote_command(platform, command)
+    def remote_command(host, command)
       cmd = "ssh -o StrictHostKeyChecking=no "
-      cmd = cmd + "-i #{platform.keyfile} " if platform.keyfile
-      cmd = cmd + "root@#{platform.hostname} '#{command}'"
+      cmd = cmd + "-i #{host.keyfile} " if host.keyfile
+      cmd = cmd + "root@#{host.hostname} '#{command}'"
       execute(cmd)
     end
 
-    def remote_copy(platform, local_file, remote_path)
+    def remote_copy(host, local_file, remote_path)
       cmd = "scp -o StrictHostKeyChecking=no "
-      cmd = cmd + "-i #{platform.keyfile} " if platform.keyfile
-      cmd = cmd + "#{local_file} root@#{platform.hostname}:#{remote_path}"
+      cmd = cmd + "-i #{host.keyfile} " if host.keyfile
+      cmd = cmd + "#{local_file} root@#{host.hostname}:#{remote_path}"
       execute(cmd)
     end
 
-    def request_vm(platform)
-      log_notice("Acquiring VM: #{platform.string}")
-      output = `curl -d --url http://vmpooler.delivery.puppetlabs.net/vm/#{platform.string} ;`
+    def request_vm(host)
+      log_notice("Acquiring VM: #{host.string}")
+      output = `curl -d --url http://vmpooler.delivery.puppetlabs.net/vm/#{host.string} ;`
       match = /\"hostname\": \"(.*)\"/.match(output)
       log_notice("Done! Hostname: #{match[1]}")
       match[1]
     end
 
-    def patch_project_on_host(platform, project, project_fork, project_version)
-      log_notice("Patching #{project} on #{platform.hostname} with #{project_version}")
+    def patch_project_on_host(host, project, project_fork, project_version)
+      log_notice("Patching #{project} on #{host.hostname} with #{project_version}")
       clone_repo(project, project_fork, project_version)
 
-      remote_copy(platform, "/tmp/#{project}/lib", '/root')
+      remote_copy(host, "/tmp/#{project}/lib", '/root')
       pl_dir = '/opt/puppetlabs/puppet/lib/ruby/vendor_ruby/'
-      remote_command(platform, "/bin/cp -rf /root/lib/* #{pl_dir}")
+      remote_command(host, "/bin/cp -rf /root/lib/* #{pl_dir}")
     end
 
-    def install_puppet_agent_on_vm(platform)
+    def install_puppet_agent_on_vm(host)
       # TODO: don't just assume we're installing /root/pkg
-      log_notice("Installing puppet-agent on #{platform.hostname}")
-      remote_command(platform, "#{platform.package_command} /root/puppet-agent* && ln -s /opt/puppetlabs/bin/* /usr/bin")
+      log_notice("Installing puppet-agent on #{host.hostname}")
+      remote_command(host, "#{host.package_command} /root/puppet-agent* && ln -s /opt/puppetlabs/bin/* /usr/bin")
       log_notice("Done!")
     end
 
-    def install_puppet_agent_from_url_on_vm(platform, pa_version)
+    def install_puppet_agent_from_url_on_vm(host, pa_version)
       base_url = 'http://builds.puppetlabs.lan/puppet-agent'
-      case platform.family
+      case host.family
         when 'el'
-          url = "#{base_url}/#{pa_version}/artifacts/el/#{platform.version}/PC1/#{platform.vanagon_arch}"
-          package_regex = "puppet-agent*el#{platform.version}\.#{platform.vanagon_arch}*"
+          url = "#{base_url}/#{pa_version}/artifacts/el/#{host.version}/PC1/#{host.vanagon_arch}"
+          package_regex = "puppet-agent*el#{host.version}\.#{host.vanagon_arch}*"
         when 'debian'
-          url = "#{base_url}/#{pa_version}/artifacts/deb/#{platform.flavor}/PC1/"
-          package_regex = "puppet-agent*#{platform.flavor}_#{platform.vanagon_arch}*"
+          url = "#{base_url}/#{pa_version}/artifacts/deb/#{host.flavor}/PC1/"
+          package_regex = "puppet-agent*#{host.flavor}_#{host.vanagon_arch}*"
       end
 
       url = URI.parse(url)
@@ -76,30 +76,30 @@ module Puppetstein
         1
       end
 
-      remote_command(platform, "wget -r -nH -nd -R \'*bundle*\' #{url} -P /root -A \'*#{package_regex}*\' -o /dev/null")
-      install_puppet_agent_on_vm(platform)
+      remote_command(host, "wget -r -nH -nd -R \'*bundle*\' #{url} -P /root -A \'*#{package_regex}*\' -o /dev/null")
+      install_puppet_agent_on_vm(host)
       0
     end
 
-    def generate_host_config(platform, path='/tmp/hosts.yml')
-      if platform.family == 'el'
-        os = platform.flavor
+    def generate_host_config(host, path='/tmp/hosts.yml')
+      if host.family == 'el'
+        os = host.flavor
       else
-        os = platform.family
+        os = host.family
       end
 
-      execute("bundle exec beaker-hostgenerator #{os}#{platform.version}-64ma{hostname=#{platform.hostname}.delivery.puppetlabs.net} > #{path}")
+      execute("bundle exec beaker-hostgenerator #{os}#{host.version}-64ma{hostname=#{host.hostname}.delivery.puppetlabs.net} > #{path}")
     end
 
-    def save_puppet_agent_artifact(platform)
+    def save_puppet_agent_artifact(host)
       desc = `git --git-dir=/tmp/puppet-agent/.git describe`
-      case platform.family
+      case host.family
         when 'el'
-        package = "puppet-agent-#{desc.gsub('-','.').chomp}-1.el#{platform.version}.#{platform.arch}.rpm"
-        path = "/tmp/puppet-agent/output/el/#{platform.version}/PC1/#{platform.arch}/#{package}"
+        package = "puppet-agent-#{desc.gsub('-','.').chomp}-1.el#{host.version}.#{host.arch}.rpm"
+        path = "/tmp/puppet-agent/output/el/#{host.version}/PC1/#{host.arch}/#{package}"
         when 'debian'
-        package = "puppet-agent_#{desc.gsub('-''.').chomp}-1#{platform.flavor}_#{platform.vanagon_arch}.deb"
-        path = "/tmp/puppet-agent/output/deb/#{platform.flavor}/PC1/#{package}"
+        package = "puppet-agent_#{desc.gsub('-''.').chomp}-1#{host.flavor}_#{host.vanagon_arch}.deb"
+        path = "/tmp/puppet-agent/output/deb/#{host.flavor}/PC1/#{package}"
       end
 
       execute("mv #{path} /tmp")

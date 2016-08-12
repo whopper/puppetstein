@@ -2,7 +2,7 @@
 
 #! /usr/env/ruby
 
-require_relative 'lib/platform.rb'
+require_relative 'lib/host.rb'
 require_relative 'lib/presuite.rb'
 require_relative 'lib/util/platform_utils.rb'
 require_relative 'lib/util/git_utils.rb'
@@ -37,12 +37,11 @@ command = Cri::Command.define do
   # build forces a build - always install
   # use mktemp
   # allow path to tests
-  # add package installer helper / setup steps
 
   # Use puppetserver
-  # PR testing: provide pr, get info and build it
   # Option: use local changes rather than github -> --puppet_repo=<blah> --puppet_sha=<blah>
   # Option: load in JSON config
+
   option nil, :puppet_agent, 'specify base puppet-agent version', argument: :optional
   option :p, :platform, 'which platform to install on', argument: :required
   option :b, :build, 'build mode: force puppetstein to build a new PA', argument: :optional
@@ -60,12 +59,12 @@ command = Cri::Command.define do
 
   run do |opts, args, cmd|
 
-    platform = Platform.new(opts.fetch(:platform))
-    platform.hostname = opts.fetch(:host) if opts[:host]
+    host = Host.new(opts.fetch(:platform))
+    host.hostname = opts.fetch(:host) if opts[:host]
     build_mode = opts.fetch(:build) if opts[:build]
     package = opts.fetch(:package) if opts[:package]
     tests = opts.fetch(:tests) if opts[:tests]
-    platform.keyfile = opts.fetch(:keyfile) if opts[:keyfile]
+    host.keyfile = opts.fetch(:keyfile) if opts[:keyfile]
 
     if build_mode && platform.hostname
       log_notice("ERROR: build and preprovisioned host modes conflict!")
@@ -88,22 +87,22 @@ command = Cri::Command.define do
     ######################
     # Just run tests on pre-provisioned host if we have one
     ######################
-    if platform.hostname
+    if host.hostname
       installed = true
     end
 
     ######################
     # Request a VM to use for the duration of the run
     ######################
-    platform.hostname = request_vm(platform)
-    install_prerequisite_packages(platform)
+    host.hostname = request_vm(host)
+    install_prerequisite_packages(host)
 
     ######################
     # If we already have a package, install it
     ######################
     if package
-      remote_copy(platform, package, '/root')
-      install_puppet_agent_on_vm(platform)
+      remote_copy(host, package, '/root')
+      install_puppet_agent_on_vm(host)
       installed = true
     end
 
@@ -116,7 +115,7 @@ command = Cri::Command.define do
       # Patch ruby projects rather than build new package
       patchable_projects = ['puppet', 'hiera']
 
-      result = install_puppet_agent_from_url_on_vm(platform, pa_version)
+      result = install_puppet_agent_from_url_on_vm(host, pa_version)
 
       # If we successfully grabbed PA from the web, we can patch. Otherwise, we build
       if result == 0
@@ -129,7 +128,7 @@ command = Cri::Command.define do
               project_fork, project_version = opts[:"#{project}"].split(':')
             end
 
-            patch_project_on_host(platform, project, project_fork, project_version )
+            patch_project_on_host(host, project, project_fork, project_version )
           end
         end
 
@@ -163,24 +162,24 @@ command = Cri::Command.define do
 
       ##
       # Build puppet-agent
-      build_puppet_agent(platform)  #TODO: install existing local build rather than new
-      package_path = save_puppet_agent_artifact(platform)
-      remote_copy(platform, package_path, '/root')
-      install_puppet_agent_on_vm(platform)
+      build_puppet_agent(host)  #TODO: install existing local build rather than new
+      package_path = save_puppet_agent_artifact(host)
+      remote_copy(host, package_path, '/root')
+      install_puppet_agent_on_vm(host)
       installed = true
     end
 
     # Run tests if specified
     if tests && installed
-      run_tests_on_host(platform, tests)
+      run_tests_on_host(host, tests)
     end
     #cleanup
   end
 end
 
-def run_tests_on_host(platform, tests)
+def run_tests_on_host(host, tests)
   hosts_file = '/tmp/hosts.yml'
-  generate_host_config(platform, hosts_file)
+  generate_host_config(host, hosts_file)
 
   test_groups = tests.split(',')
   test_groups.each do |test|
@@ -191,7 +190,7 @@ def run_tests_on_host(platform, tests)
     cmd = "export RUBYLIB=/tmp/#{project}/acceptance/lib && pushd /tmp/#{project}/acceptance " +
           "&& bundle install && bundle exec beaker --hosts #{hosts_file} " +
           "--tests #{test} --no-provision --debug"
-    cmd = cmd + " --keyfile=#{platform.keyfile}" if platform.keyfile
+    cmd = cmd + " --keyfile=#{host.keyfile}" if host.keyfile
 
     execute(cmd)
   end
@@ -205,13 +204,13 @@ def change_component_ref(component_name, url, ref)
   log_notice("updated /tmp/puppet-agent/configs/components/#{component_name}.json with url #{url} and ref #{ref}")
 end
 
-def build_puppet_agent(platform)
-  log_notice("building puppet-agent for #{platform.family} #{platform.version} #{platform.arch}")
+def build_puppet_agent(host)
+  log_notice("building puppet-agent for #{host.family} #{host.version} #{host.arch}")
 
   cmd = "pushd /tmp/puppet-agent && bundle install && bundle exec build puppet-agent" +
-        " #{platform.family}-#{platform.version}-#{platform.vanagon_arch} && popd"
+        " #{host.family}-#{host.version}-#{host.vanagon_arch} && popd"
 
-  cmd = cmd + " VANAGON_SSH_KEY=#{keyfile}" if platform.keyfile
+  cmd = cmd + " VANAGON_SSH_KEY=#{host.keyfile}" if host.keyfile
   execute(cmd)
 end
 
