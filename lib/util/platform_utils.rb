@@ -43,6 +43,7 @@ module Puppetstein
     end
 
     def patch_project_on_host(host, project, project_fork, project_version)
+      # TODO: clone on remote system
       log_notice("Patching #{project} on #{host.hostname} with #{project_version}")
       clone_repo(project, project_fork, project_version, host.local_tmpdir)
 

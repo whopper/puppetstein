@@ -36,7 +36,8 @@ command = Cri::Command.define do
   # fix the ruby thing
   # allow path to tests
 
-  # Use puppetserver
+  # Use puppetserver and patch the agent on the server
+  # Always install PA latest and just patch?
   # Option: use local changes rather than github -> --puppet_repo=<blah> --puppet_sha=<blah>
 
   option nil, :puppet_agent, 'specify base puppet-agent version', argument: :optional
@@ -75,6 +76,7 @@ command = Cri::Command.define do
       exit 1
     end
 
+    # TODO: validate input!
     if opts[:puppet_agent]
       pa_fork, pa_version = opts[:puppet_agent].split(':')
     else
@@ -99,6 +101,9 @@ command = Cri::Command.define do
       install_prerequisite_packages(host)
       setup_puppetserver_on_host(master, pa_version)
     end
+
+    # don't build twice: once built, save package and use for both hosts
+
 
     ######################
     # If we already have a package, install it
