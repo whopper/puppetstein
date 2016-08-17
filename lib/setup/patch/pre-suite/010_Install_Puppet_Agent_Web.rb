@@ -8,7 +8,6 @@ step "Install puppet-agent..." do
     :puppet_agent_sha     => ENV['PA_SHA'],
     :puppet_agent_version => ENV['PA_SUITE'] || ENV['PA_SHA']
   }
-  puts opts.inspect
   agents.each do |agent|
     next if agent == master # Avoid SERVER-528
     install_puppet_agent_dev_repo_on(agent, opts)

@@ -9,9 +9,11 @@ require 'beaker-hostgenerator'
 require 'beaker/dsl/install_utils'
 require_relative 'lib/host'
 require_relative 'lib/util/platform_utils.rb'
+require_relative 'lib/util/git_utils.rb'
 
 include Puppetstein
 include Puppetstein::PlatformUtils
+include Puppetstein::GitUtils
 
 command = Cri::Command.define do
   name 'puppetstein'
@@ -73,7 +75,7 @@ command = Cri::Command.define do
     ENV['PA_SUITE'] = opts.fetch(:puppet_agent_suite_version) if opts[:puppet_agent_suite_version]
 
     if agent.hostname
-      # Pre-provisioned mode. Basically just run tests.
+      # Pre-provisioned mode. Basically just run tests. Create a host config with just the agent
     end
 
     if build_mode || opts[:facter]
@@ -108,8 +110,23 @@ command = Cri::Command.define do
     #            Install puppetserver on master
     #            sign agent cert on master
     # Then, run any tests
+    patchable_projects = ['puppet', 'hiera']
+    patchable_projects.each do |project|
+      if opts[:"#{project}"]
+        if pr = /pr_(\d+)/.match(opts[:"#{project}"])
+          # This is a pull request number. Get the fork and branch
+          project_fork, project_sha = get_ref_from_pull_request(project, pr[1]).split(':')
+        else
+          project_fork, project_sha = opts[:"#{project}"].split(':')
+        end
+
+        ENV["#{project}"] = "#{project_fork}:#{project_sha}"
+      end
+    end
+
     create_host_config([agent, master], config)
-    execute("bundle exec beaker --hosts=#{config} --type=aio --pre-suite=./lib/setup/patch/pre-suite,lib/setup/common/pre-suite --keyfile=#{agent.keyfile} --preserve-hosts=never")
+    patch_pre_suites = ['lib/setup/patch/pre-suite', 'lib/setup/common/pre-suite']
+    execute("bundle exec beaker --hosts=#{config} --type=aio --pre-suite=#{patch_pre_suites.join(',')} --keyfile=#{agent.keyfile} --preserve-hosts=always --debug")
   end
 end
 
