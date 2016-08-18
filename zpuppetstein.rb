@@ -30,12 +30,6 @@ command = Cri::Command.define do
     exit 0
   end
 
-  # TODO:
-  # fix the ruby thing
-  # allow path to tests
-
-  # Use puppetserver and patch the agent on the server
-  # Always install PA latest and just patch?
   # Option: use local changes rather than github -> --puppet_repo=<blah> --puppet_sha=<blah>
 
   option nil, :puppet_agent, 'specify base puppet-agent version', argument: :optional
@@ -48,7 +42,8 @@ command = Cri::Command.define do
   option nil, :facter, 'separated with a :', argument: :optional
   option nil, :hiera, 'separated with a :', argument: :optional
 
-  option nil, :agent, 'use a pre-provisioned host. Useful for re-running tests', argument: :optional
+  option nil, :agent, 'use a pre-provisioned agent. Useful for re-running tests. Requires --master option as well', argument: :optional
+  option nil, :master, 'use a pre-provisioned master. Useful for re-running tests. Requires --agent option as well', argument: :optional
 
   option :t, :tests, 'tests to run against a puppet-agent installation', argument: :optional
   option :k, :keyfile, 'keyfile to use with vmpooler', argument: :optional
@@ -56,13 +51,21 @@ command = Cri::Command.define do
   run do |opts, args, cmd|
     agent = Host.new(opts.fetch(:platform))
     master = Host.new('redhat-7-x86_64')
-    agent.agentname = opts.fetch(:agent) if opts[:agent]  # Preprovisioned agent
+    agent.hostname = opts.fetch(:agent) if opts[:agent]  # Preprovisioned agent
+    master.hostname = opts.fetch(:master) if opts[:master]  # Preprovisioned master
     agent.keyfile = opts.fetch(:keyfile) if opts[:keyfile]
     master.keyfile = opts.fetch(:keyfile) if opts[:keyfile]
     build_mode = opts.fetch(:build) if opts[:build]
     package = opts.fetch(:package) if opts[:package]
     tests = opts.fetch(:tests) if opts[:tests]
-    config = "tmp/hosts.yaml"
+    tmp = tmpdir
+    config = "#{tmp}/hosts.yaml"
+
+    # Check for conflicting options
+    if (agent.hostname && !master.hostname) || (!agent.hostname && master.hostname)
+      log_notice("Error: must specify both pre-provisioned agent and master")
+      exit 1
+    end
 
     if opts[:puppet_agent]
       pa_fork, pa_sha = opts.fetch(:puppet_agent).split(':')
@@ -71,11 +74,26 @@ command = Cri::Command.define do
       pa_sha = 'nightly'
     end
 
+    report = Hash.new
+    report[:agent] = agent.hostname
+    report[:master] = master.hostname
+    report[:puppet_agent] = "#{pa_fork}:#{pa_sha}"
+
     ENV['PA_SHA'] = pa_sha
     ENV['PA_SUITE'] = opts.fetch(:puppet_agent_suite_version) if opts[:puppet_agent_suite_version]
 
-    if agent.hostname
+    if agent.hostname && master.hostname
       # Pre-provisioned mode. Basically just run tests. Create a host config with just the agent
+      create_host_config([agent, master], config)
+      clone_component_repos(tmp)
+      puts cmd
+      cmd = "export RUBYLIB=#{tmp}/puppet/acceptance/lib:#{tmp}/facter/acceptance/lib:#{tmp}/hiera/acceptance/lib "
+      cmd = cmd + "&& bundle exec beaker --hosts=#{config} --type=aio --keyfile=#{agent.keyfile} --preserve-hosts=always --no-provision --debug "
+      cmd = cmd + "--tests=#{get_test_list(tests, tmp).join(',')}" if tests
+      puts cmd
+      execute(cmd)
+      print_report(report)
+      exit 0
     end
 
     if build_mode || opts[:facter]
@@ -126,18 +144,64 @@ command = Cri::Command.define do
 
     create_host_config([agent, master], config)
     patch_pre_suites = ['lib/setup/patch/pre-suite', 'lib/setup/common/pre-suite']
-    execute("bundle exec beaker --hosts=#{config} --type=aio --pre-suite=#{patch_pre_suites.join(',')} --keyfile=#{agent.keyfile} --preserve-hosts=always --debug")
+    cmd = "bundle exec beaker --hosts=#{config} --type=aio --pre-suite=#{patch_pre_suites.join(',')} --keyfile=#{agent.keyfile} --preserve-hosts=always --debug"
+    cmd = cmd + " --tests=#{get_test_list(tests, tmp).join(',')}" if tests
+    execute(cmd)
+    print_report(report)
+    exit 0
   end
 end
 
+def clone_component_repos(tmpdir)
+  log_notice("Cloning components to obtain tests and test libraries...")
+  ['puppet', 'facter', 'hiera'].each do |project|
+      clone_repo(project, 'puppetlabs', 'master', tmpdir)
+  end
+end
+
+def get_test_list(tests, tmpdir)
+  # TODO: --testdir
+  test_list = []
+  tests.split(',').each do |test|
+    project, test = test.split(':')
+    if File.exist?(test)
+      test_list << test
+    else
+      # TODO: use testdir
+      test_list << "#{tmpdir}/#{project}/acceptance/tests/#{test}"
+    end
+  end
+  test_list
+end
+
 def create_host_config(hosts, config)
-  targets = "#{hosts[0].flavor}#{hosts[0].version}-64a-#{hosts[1].flavor}#{hosts[1].version}-64m"
+  if hosts[0].hostname && hosts[1].hostname
+    targets = "#{hosts[0].flavor}#{hosts[0].version}-64a{hostname=#{hosts[0].hostname}}-#{hosts[1].flavor}#{hosts[1].version}-64m{hostname=#{hosts[1].hostname}}"
+  else
+    targets = "#{hosts[0].flavor}#{hosts[0].version}-64a-#{hosts[1].flavor}#{hosts[1].version}-64m"
+  end
+
   cli = BeakerHostGenerator::CLI.new([targets, '--disable-default-role', '--osinfo-version', '1'])
 
   FileUtils.mkdir_p(File.dirname(config))
   File.open(config, 'w') do |fh|
     fh.print(cli.execute)
   end
+end
+
+def tmpdir
+  `mktemp -d /tmp/puppetstein.XXXXX`.chomp!
+end
+
+def print_report(report)
+  puts "\n\n"
+  puts "====================================="
+  puts "Run Report"
+  puts "====================================="
+  report.each do |k,v|
+    puts "#{k}: #{v}"
+  end
+  puts "====================================="
 end
 
 def change_component_ref(component_name, url, ref)

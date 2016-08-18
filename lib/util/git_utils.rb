@@ -13,7 +13,7 @@ module Puppetstein
         execute("rm -rf #{tmpdir}/#{project}")
       end
 
-      g = Git.clone("git@github.com:#{git_fork}/#{project}.git", project, :path => "#{tmpdir}/")
+      g = Git.clone("git@github.com:#{git_fork}/#{project}.git", project, {:path => "#{tmpdir}/", :depth => 1})
       g.fetch
       g.checkout(sha)
       log_notice("cloned #{project}:#{sha} to #{tmpdir}/#{project}")
