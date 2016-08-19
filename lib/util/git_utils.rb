@@ -1,5 +1,6 @@
 #! /Users/whopper/.rbenv/shims/ruby
 
+require 'json'
 #! /usr/env/ruby
 
 require 'open-uri'

@@ -70,6 +70,12 @@ command = Cri::Command.define do
     tmp = tmpdir
     config = "#{tmp}/hosts.yaml"
 
+    # Check for conflicting options
+    if (use_last || opts[:agent]) && (opts[:puppet_agent] || opts[:puppet] || opts[:hiera] || opts[:facter])
+      log_notice('ERROR: using preprovisioned system - ignoring request for modified components')
+      exit 1
+    end
+
     if opts[:puppet_agent]
       pa_fork, pa_sha = opts.fetch(:puppet_agent).split(':')
     else
@@ -139,7 +145,7 @@ command = Cri::Command.define do
       exit 0
     end
 
-    # Patch mode
+    # Patch mode: If no other mode was specifically requested
     patchable_projects = ['puppet', 'hiera']
     patchable_projects.each do |p|
       if opts[:"#{p}"]
@@ -150,13 +156,13 @@ command = Cri::Command.define do
           project_fork, project_sha = opts[:"#{p}"].split(':')
         end
 
-        ENV["#{p}"] = "#{project_fork}:#{project_sha}"
+        ENV["#{p.upcase}"] = "#{project_fork}:#{project_sha}"
       end
     end
 
     create_host_config([agent, master], config)
-    patch_pre_suites = ['lib/setup/patch/pre-suite', 'lib/setup/common/pre-suite']
-    cmd = "bundle exec beaker --hosts=#{config} --type=aio --pre-suite=#{patch_pre_suites.join(',')} --keyfile=#{keyfile} --preserve-hosts=always --debug"
+    pre_suites = ['lib/setup/patch/pre-suite', 'lib/setup/common/pre-suite']
+    cmd = "bundle exec beaker --hosts=#{config} --type=aio --pre-suite=#{pre_suites.join(',')} --keyfile=#{keyfile} --preserve-hosts=always --debug"
     cmd = cmd + " --tests=#{test_location}" if tests
     execute(cmd)
 
