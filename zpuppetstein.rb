@@ -34,9 +34,6 @@ command = Cri::Command.define do
     exit 0
   end
 
-  # Option: use local changes rather than github -> --puppet_repo=<blah> --puppet_sha=<blah>
-  # TODO: use_previous_hosts option to use latest config
-  # TODO: get hostnames out of beaker-generated VMs
   # TODO: allow tests from multiple projects to be run
   # TODO; allow testing multiple agent platforms at once
   # TODO: glob tests and test libs together for uber test
@@ -45,7 +42,6 @@ command = Cri::Command.define do
   option :p, :platform, 'which platform to install on', argument: :optional
   option :b, :build, 'build mode: force puppetstein to build a new PA', argument: :optional
   option nil, :package, 'path to a puppet-agent package to install', argument: :optional
-  # TODO: if file: then use local checkout
   option nil, :puppet, 'separated with a :', argument: :optional
   option nil, :facter, 'separated with a :', argument: :optional
   option nil, :hiera, 'separated with a :', argument: :optional
@@ -57,11 +53,17 @@ command = Cri::Command.define do
   option :k, :keyfile, 'keyfile to use with vmpooler', argument: :optional
 
   run do |opts, args, cmd|
-    agent = Host.new(opts.fetch(:platform)) if opts[:platform]
-    master = Host.new('redhat-7-x86_64') if opts[:platform]
+    if opts[:platform]
+      agent = Host.new(opts.fetch(:platform))
+      master = Host.new('redhat-7-x86_64')
+    else
+      agent = Host.new('ubuntu-1604-x86_64')
+      master = Host.new('redhat-7-x86_64')
+    end
+
     agent.hostname = opts.fetch(:agent) if opts[:agent]  # Preprovisioned agent
     master.hostname = opts.fetch(:master) if opts[:master]  # Preprovisioned master
-    keyfile = opts.fetch(:keyfile) if opts[:keyfile]
+    keyfile = opts[:keyfile] ? opts.fetch(:keyfile) : nil
     build_mode = opts.fetch(:build) if opts[:build]
     use_last = opts.fetch(:use_last) if opts[:use_last]
     package = opts.fetch(:package) if opts[:package]
@@ -80,6 +82,7 @@ command = Cri::Command.define do
       pa_fork, pa_sha = opts.fetch(:puppet_agent).split(':')
     else
       # TODO: this doesn't work
+      # beaker:install_utils/foss_utils.rb has get_latest_puppet_agent_build_from_url(url)
       pa_fork = 'puppetlabs'
       pa_sha = 'nightly'
     end
@@ -121,14 +124,36 @@ command = Cri::Command.define do
     end
 
     if build_mode || opts[:facter]
-      # Build package and install it on agent and master
-      # Get empty VMs from beaker and go from there. Beaker may be able to help.
-      # See beaker scp_to method. This stuff will all happen in a presuite script.
-      # Presuites: scp and install package on agent
-      #            scp and install package on master
-      #            install puppetserver on master
-      #            sign agent cert on master
-      # Then, run any tests
+      clone_repo('puppet-agent', pa_fork, pa_sha, tmp)
+
+      ##
+      # Update the PA components with specified versions
+      ['puppet', 'facter', 'hiera'].each do |p|
+        if opts[:"#{p}"]
+          if pr = /pr_(\d+)/.match(opts[:"#{p}"])
+            # This is a pull request number. Get the fork and branch
+            project_fork, project_sha = get_ref_from_pull_request(p, pr[1]).split(':')
+          else
+            project_fork, project_sha = opts[:"#{p}"].split(':')
+          end
+
+          change_component_ref(p, "git://github.com/#{project_fork}/#{p}.git", project_sha, tmp)
+        end
+      end
+
+      build_puppet_agent(agent, keyfile, tmp)
+      package = save_puppet_agent_artifact(agent, tmp)
+
+      ENV['PACKAGE'] = package
+
+      pre_suites = ['lib/setup/build/pre-suite', 'lib/setup/common/pre-suite']
+      cmd = "bundle exec beaker --hosts=#{config} --type=aio --pre-suite=#{pre_suites.join(',')} --keyfile=#{keyfile} --preserve-hosts=always --debug"
+      cmd = cmd + " --tests=#{test_location}" if tests
+      execute(cmd)
+
+      log = YAML.load_file('log/latest/hosts_preserved.yml')
+      print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
+
       create_host_config([agent, master], config)
       exit 0
     end
@@ -202,21 +227,20 @@ def print_report(report)
   puts "====================================="
 end
 
-def change_component_ref(component_name, url, ref)
+def change_component_ref(component_name, url, ref, tmp)
   new_ref = Hash.new
   new_ref['url'] = url
   new_ref['ref'] = ref
-  File.write("#{host.local_tmpdir}/puppet-agent/configs/components/#{component_name}.json", JSON.pretty_generate(new_ref))
-  log_notice("updated #{host.local_tmpdir}/puppet-agent/configs/components/#{component_name}.json with url #{url} and ref #{ref}")
+  File.write("#{tmp}/puppet-agent/configs/components/#{component_name}.json", JSON.pretty_generate(new_ref))
+  log_notice("updated #{tmp}/puppet-agent/configs/components/#{component_name}.json with url #{url} and ref #{ref}")
 end
 
-def build_puppet_agent(host, keyfile)
+def build_puppet_agent(host, keyfile, tmp)
   log_notice("building puppet-agent for #{host.family} #{host.version} #{host.arch}")
 
-  cmd = "pushd #{host.local_tmpdir}/puppet-agent && bundle install && bundle exec build puppet-agent" +
+  ENV['VANAGON_SSH_KEY'] = keyfile if keyfile
+  cmd = "pushd #{tmp}/puppet-agent && bundle install && bundle exec build puppet-agent" +
         " #{host.family}-#{host.version}-#{host.vanagon_arch} && popd"
-
-  cmd = cmd + " VANAGON_SSH_KEY=#{keyfile}" if keyfile
   execute(cmd)
 end
 
