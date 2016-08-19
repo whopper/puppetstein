@@ -18,7 +18,6 @@ module Puppetstein
       args[:path] = "#{tmpdir}/"
       args[:depth] = depth if depth
 
-      puts "git clone git@github.com:#{git_fork}/#{project}.git with #{args.inspect}"
       g = Git.clone("git@github.com:#{git_fork}/#{project}.git", project, args)
       g.fetch
       g.checkout(sha)

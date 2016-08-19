@@ -10,6 +10,7 @@ require 'beaker/platform'
 require 'beaker/logger'
 require 'beaker/result'
 require 'beaker/dsl/install_utils'
+require 'beaker/dsl/install_utils/foss_utils'
 require 'beaker/options/options_hash.rb'
 require_relative 'lib/host'
 require_relative 'lib/util/platform_utils.rb'
@@ -18,6 +19,7 @@ require_relative 'lib/util/git_utils.rb'
 include Puppetstein
 include Puppetstein::PlatformUtils
 include Puppetstein::GitUtils
+include Beaker::DSL::InstallUtils::FOSSUtils
 
 command = Cri::Command.define do
   name 'puppetstein'
@@ -72,6 +74,12 @@ command = Cri::Command.define do
     tmp = tmpdir
     config = "#{tmp}/hosts.yaml"
 
+    default_beaker_options = {
+      'type' => 'aio',
+      'keyfile' => keyfile,
+      'preserve-hosts' => 'always'
+    }
+
     # Check for conflicting options
     if (use_last || opts[:agent]) && (opts[:puppet_agent] || opts[:puppet] || opts[:hiera] || opts[:facter])
       log_notice('ERROR: using preprovisioned system - ignoring request for modified components')
@@ -81,10 +89,9 @@ command = Cri::Command.define do
     if opts[:puppet_agent]
       pa_fork, pa_sha = opts.fetch(:puppet_agent).split(':')
     else
-      # TODO: this doesn't work
-      # beaker:install_utils/foss_utils.rb has get_latest_puppet_agent_build_from_url(url)
+      # TODO: builds.puppetlabs doesn't have latest...
       pa_fork = 'puppetlabs'
-      pa_sha = 'nightly'
+      pa_sha = 'latest'
     end
 
     ENV['PA_SHA'] = pa_sha
@@ -105,9 +112,9 @@ command = Cri::Command.define do
     end
 
     if use_last
-      cmd = "bundle exec beaker --hosts=log/latest/hosts_preserved.yml --type=aio --keyfile=#{keyfile} --preserve-hosts=always --no-provision --debug "
-      cmd = cmd + "--tests=#{test_location}" if tests
-      execute(cmd)
+      options = {'hosts' => 'log/latest/hosts_preserved.yml'}
+      options['tests'] = test_location if tests
+      run_beaker(options.merge(default_beaker_options))
 
       log = YAML.load_file('log/latest/hosts_preserved.yml')
       print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
@@ -116,9 +123,10 @@ command = Cri::Command.define do
 
     if agent.hostname && master.hostname
       create_host_config([agent, master], config)
-      cmd = "bundle exec beaker --hosts=#{config} --type=aio --keyfile=#{keyfile} --preserve-hosts=always --no-provision --debug "
-      cmd = cmd + "--tests=#{test_location}" if tests
-      execute(cmd)
+      options = {'hosts' => config, 'flag' => 'no-provision'}
+      options['tests'] = test_location if tests
+      run_beaker(options.merge(default_beaker_options))
+
       print_report({:agent => agent.hostname, :master => master.hostname, :puppet_agent => "#{pa_fork}:#{pa_sha}"})
       exit 0
     end
@@ -142,19 +150,18 @@ command = Cri::Command.define do
         end
       end
 
-      #build_puppet_agent(agent, keyfile, tmp)
+      build_puppet_agent(agent, keyfile, tmp)
       package = save_puppet_agent_artifact(agent, tmp)
 
       ENV['PACKAGE'] = package
 
       pre_suites = ['lib/setup/build/pre-suite', 'lib/setup/common/pre-suite']
-      cmd = "bundle exec beaker --hosts=#{config} --type=aio --pre-suite=#{pre_suites.join(',')} --keyfile=#{keyfile} --preserve-hosts=always --debug"
-      cmd = cmd + " --tests=#{test_location}" if tests
-      execute(cmd)
+      options = {'hosts' => config, 'pre-suite' => pre_suites.join(',')}
+      options['tests'] = test_location if tests
+      run_beaker(options.merge(default_beaker_options))
 
       log = YAML.load_file('log/latest/hosts_preserved.yml')
       print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
-
       exit 0
     end
 
@@ -163,14 +170,12 @@ command = Cri::Command.define do
       ENV['PACKAGE'] = package
 
       pre_suites = ['lib/setup/build/pre-suite', 'lib/setup/common/pre-suite']
-      cmd = "bundle exec beaker --hosts=#{config} --type=aio --pre-suite=#{pre_suites.join(',')} --keyfile=#{keyfile} --preserve-hosts=always --debug"
-      cmd = cmd + " --tests=#{test_location}" if tests
-      execute(cmd)
+      options = {'hosts' => config, 'pre-suite' => pre_suites.join(',')}
+      options['tests'] = test_location if tests
+      run_beaker(options.merge(default_beaker_options))
 
       log = YAML.load_file('log/latest/hosts_preserved.yml')
       print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
-
-      create_host_config([agent, master], config)
       exit 0
     end
 
@@ -191,14 +196,29 @@ command = Cri::Command.define do
 
     create_host_config([agent, master], config)
     pre_suites = ['lib/setup/patch/pre-suite', 'lib/setup/common/pre-suite']
-    cmd = "bundle exec beaker --hosts=#{config} --type=aio --pre-suite=#{pre_suites.join(',')} --keyfile=#{keyfile} --preserve-hosts=always --debug"
-    cmd = cmd + " --tests=#{test_location}" if tests
-    execute(cmd)
+    options = {'hosts' => config, 'pre-suite' => pre_suites.join(',')}
+    options['tests'] = test_location if tests
+    run_beaker(options.merge(default_beaker_options))
 
     log = YAML.load_file('log/latest/hosts_preserved.yml')
     print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
     exit 0
   end
+end
+
+def run_beaker(args = {})
+  options = ''
+  args.each do |k,v|
+    if k == 'flag'
+      options = options + "--#{v}"
+    else
+      options = options + "--#{k}=#{v} "
+    end
+  end
+
+  cmd = "bundle exec beaker #{options} --debug"
+  puts cmd
+  execute(cmd)
 end
 
 def create_host_config(hosts, config)
