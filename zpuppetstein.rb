@@ -6,7 +6,11 @@ require 'cri'
 require 'git'
 require 'yaml'
 require 'beaker-hostgenerator'
+require 'beaker/platform'
+require 'beaker/logger'
+require 'beaker/result'
 require 'beaker/dsl/install_utils'
+require 'beaker/options/options_hash.rb'
 require_relative 'lib/host'
 require_relative 'lib/util/platform_utils.rb'
 require_relative 'lib/util/git_utils.rb'
@@ -31,68 +35,82 @@ command = Cri::Command.define do
   end
 
   # Option: use local changes rather than github -> --puppet_repo=<blah> --puppet_sha=<blah>
+  # TODO: use_previous_hosts option to use latest config
+  # TODO: get hostnames out of beaker-generated VMs
+  # TODO: allow tests from multiple projects to be run
+  # TODO; allow testing multiple agent platforms at once
+  # TODO: glob tests and test libs together for uber test
 
   option nil, :puppet_agent, 'specify base puppet-agent version', argument: :optional
-  option :p, :platform, 'which platform to install on', argument: :required
+  option :p, :platform, 'which platform to install on', argument: :optional
   option :b, :build, 'build mode: force puppetstein to build a new PA', argument: :optional
   option nil, :package, 'path to a puppet-agent package to install', argument: :optional
-
   # TODO: if file: then use local checkout
   option nil, :puppet, 'separated with a :', argument: :optional
   option nil, :facter, 'separated with a :', argument: :optional
   option nil, :hiera, 'separated with a :', argument: :optional
-
   option nil, :agent, 'use a pre-provisioned agent. Useful for re-running tests. Requires --master option as well', argument: :optional
   option nil, :master, 'use a pre-provisioned master. Useful for re-running tests. Requires --agent option as well', argument: :optional
-
+  flag nil, :use_last, 'use hosts from the last run', argument: :optional
   option :t, :tests, 'tests to run against a puppet-agent installation', argument: :optional
+  option nil, :acceptancedir, 'colon separated list of directories where tests and test libraries can be found', argument: :optional
   option :k, :keyfile, 'keyfile to use with vmpooler', argument: :optional
 
   run do |opts, args, cmd|
-    agent = Host.new(opts.fetch(:platform))
-    master = Host.new('redhat-7-x86_64')
+    agent = Host.new(opts.fetch(:platform)) if opts[:platform]
+    master = Host.new('redhat-7-x86_64') if opts[:platform]
     agent.hostname = opts.fetch(:agent) if opts[:agent]  # Preprovisioned agent
     master.hostname = opts.fetch(:master) if opts[:master]  # Preprovisioned master
-    agent.keyfile = opts.fetch(:keyfile) if opts[:keyfile]
-    master.keyfile = opts.fetch(:keyfile) if opts[:keyfile]
+    keyfile = opts.fetch(:keyfile) if opts[:keyfile]
     build_mode = opts.fetch(:build) if opts[:build]
+    use_last = opts.fetch(:use_last) if opts[:use_last]
     package = opts.fetch(:package) if opts[:package]
     tests = opts.fetch(:tests) if opts[:tests]
+    acceptancedir = opts.fetch(:acceptancedir) if opts[:acceptancedir]
     tmp = tmpdir
     config = "#{tmp}/hosts.yaml"
-
-    # Check for conflicting options
-    if (agent.hostname && !master.hostname) || (!agent.hostname && master.hostname)
-      log_notice("Error: must specify both pre-provisioned agent and master")
-      exit 1
-    end
 
     if opts[:puppet_agent]
       pa_fork, pa_sha = opts.fetch(:puppet_agent).split(':')
     else
+      # TODO: this doesn't work
       pa_fork = 'puppetlabs'
       pa_sha = 'nightly'
     end
 
-    report = Hash.new
-    report[:agent] = agent.hostname
-    report[:master] = master.hostname
-    report[:puppet_agent] = "#{pa_fork}:#{pa_sha}"
-
     ENV['PA_SHA'] = pa_sha
     ENV['PA_SUITE'] = opts.fetch(:puppet_agent_suite_version) if opts[:puppet_agent_suite_version]
 
-    if agent.hostname && master.hostname
-      # Pre-provisioned mode. Basically just run tests. Create a host config with just the agent
-      create_host_config([agent, master], config)
-      clone_component_repos(tmp)
-      puts cmd
-      cmd = "export RUBYLIB=#{tmp}/puppet/acceptance/lib:#{tmp}/facter/acceptance/lib:#{tmp}/hiera/acceptance/lib "
-      cmd = cmd + "&& bundle exec beaker --hosts=#{config} --type=aio --keyfile=#{agent.keyfile} --preserve-hosts=always --no-provision --debug "
-      cmd = cmd + "--tests=#{get_test_list(tests, tmp).join(',')}" if tests
-      puts cmd
+    if tests
+      # --tests=facter:facts/el.rb
+      # --acceptancedir=~/Coding/facter/acceptance
+      project, test = tests.split(':')
+      if acceptancedir
+        ENV['RUBYLIB'] = "#{acceptancedir}/lib"
+        test_location = "#{acceptancedir}/tests/#{test}"
+      else
+        clone_repo(project, 'puppetlabs', 'master', tmp)
+        ENV['RUBYLIB'] = "#{tmp}/#{project}/acceptance/lib"
+        test_location = "#{tmp}/#{project}/acceptance/tests/#{test}"
+      end
+    end
+
+    if use_last
+      cmd = "bundle exec beaker --hosts=log/latest/hosts_preserved.yml --type=aio --keyfile=#{keyfile} --preserve-hosts=always --no-provision --debug "
+      cmd = cmd + "--tests=#{test_location}" if tests
       execute(cmd)
-      print_report(report)
+
+      log = YAML.load_file('log/latest/hosts_preserved.yml')
+      print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
+      exit 0
+    end
+
+    if agent.hostname && master.hostname
+      create_host_config([agent, master], config)
+      cmd = "bundle exec beaker --hosts=#{config} --type=aio --keyfile=#{keyfile} --preserve-hosts=always --no-provision --debug "
+      cmd = cmd + "--tests=#{test_location}" if tests
+      execute(cmd)
+      print_report({:agent => agent.hostname, :master => master.hostname, :puppet_agent => "#{pa_fork}:#{pa_sha}"})
       exit 0
     end
 
@@ -106,6 +124,7 @@ command = Cri::Command.define do
       #            sign agent cert on master
       # Then, run any tests
       create_host_config([agent, master], config)
+      exit 0
     end
 
     if package
@@ -117,61 +136,34 @@ command = Cri::Command.define do
       #            sign agent cert on master
       # Then, run any tests
       create_host_config([agent, master], config)
+      exit 0
     end
 
     # Patch mode
-    # 1) Use beaker to create new VMs and install PA of the proper version on them.
-    #    If we can't install from the web, fall back to building.
-    # 2) Get the branch of the patched project, clone it on the VM and patch it
-    # Presuites: Install and patch PA from web on agent  - catch a failure here and build instead
-    #            Install and patch PA on master
-    #            Install puppetserver on master
-    #            sign agent cert on master
-    # Then, run any tests
     patchable_projects = ['puppet', 'hiera']
-    patchable_projects.each do |project|
-      if opts[:"#{project}"]
-        if pr = /pr_(\d+)/.match(opts[:"#{project}"])
+    patchable_projects.each do |p|
+      if opts[:"#{p}"]
+        if pr = /pr_(\d+)/.match(opts[:"#{p}"])
           # This is a pull request number. Get the fork and branch
-          project_fork, project_sha = get_ref_from_pull_request(project, pr[1]).split(':')
+          project_fork, project_sha = get_ref_from_pull_request(p, pr[1]).split(':')
         else
-          project_fork, project_sha = opts[:"#{project}"].split(':')
+          project_fork, project_sha = opts[:"#{p}"].split(':')
         end
 
-        ENV["#{project}"] = "#{project_fork}:#{project_sha}"
+        ENV["#{p}"] = "#{project_fork}:#{project_sha}"
       end
     end
 
     create_host_config([agent, master], config)
     patch_pre_suites = ['lib/setup/patch/pre-suite', 'lib/setup/common/pre-suite']
-    cmd = "bundle exec beaker --hosts=#{config} --type=aio --pre-suite=#{patch_pre_suites.join(',')} --keyfile=#{agent.keyfile} --preserve-hosts=always --debug"
-    cmd = cmd + " --tests=#{get_test_list(tests, tmp).join(',')}" if tests
+    cmd = "bundle exec beaker --hosts=#{config} --type=aio --pre-suite=#{patch_pre_suites.join(',')} --keyfile=#{keyfile} --preserve-hosts=always --debug"
+    cmd = cmd + " --tests=#{test_location}" if tests
     execute(cmd)
-    print_report(report)
+
+    log = YAML.load_file('log/latest/hosts_preserved.yml')
+    print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
     exit 0
   end
-end
-
-def clone_component_repos(tmpdir)
-  log_notice("Cloning components to obtain tests and test libraries...")
-  ['puppet', 'facter', 'hiera'].each do |project|
-      clone_repo(project, 'puppetlabs', 'master', tmpdir)
-  end
-end
-
-def get_test_list(tests, tmpdir)
-  # TODO: --testdir
-  test_list = []
-  tests.split(',').each do |test|
-    project, test = test.split(':')
-    if File.exist?(test)
-      test_list << test
-    else
-      # TODO: use testdir
-      test_list << "#{tmpdir}/#{project}/acceptance/tests/#{test}"
-    end
-  end
-  test_list
 end
 
 def create_host_config(hosts, config)
@@ -212,18 +204,18 @@ def change_component_ref(component_name, url, ref)
   log_notice("updated #{host.local_tmpdir}/puppet-agent/configs/components/#{component_name}.json with url #{url} and ref #{ref}")
 end
 
-def build_puppet_agent(host)
+def build_puppet_agent(host, keyfile)
   log_notice("building puppet-agent for #{host.family} #{host.version} #{host.arch}")
 
   cmd = "pushd #{host.local_tmpdir}/puppet-agent && bundle install && bundle exec build puppet-agent" +
         " #{host.family}-#{host.version}-#{host.vanagon_arch} && popd"
 
-  cmd = cmd + " VANAGON_SSH_KEY=#{host.keyfile}" if host.keyfile
+  cmd = cmd + " VANAGON_SSH_KEY=#{keyfile}" if keyfile
   execute(cmd)
 end
 
 def cleanup
-  `rm -rf #{host.local_tmpdir}/puppet-agent`
+  `rm -rf #{tmpdir}`
 end
 
 command.run(ARGV)
