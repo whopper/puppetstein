@@ -125,6 +125,7 @@ command = Cri::Command.define do
 
     if build_mode || opts[:facter]
       clone_repo('puppet-agent', pa_fork, pa_sha, tmp)
+      create_host_config([agent, master], config)
 
       ##
       # Update the PA components with specified versions
@@ -141,7 +142,7 @@ command = Cri::Command.define do
         end
       end
 
-      build_puppet_agent(agent, keyfile, tmp)
+      #build_puppet_agent(agent, keyfile, tmp)
       package = save_puppet_agent_artifact(agent, tmp)
 
       ENV['PACKAGE'] = package
@@ -154,18 +155,21 @@ command = Cri::Command.define do
       log = YAML.load_file('log/latest/hosts_preserved.yml')
       print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
 
-      create_host_config([agent, master], config)
       exit 0
     end
 
     if package
-      # We already have a built package. Just do the same stuff as build_mode
-      # except building the package.
-      # Presuites: scp and install package on agent
-      #            scp and install package on master
-      #            install puppetserver on master
-      #            sign agent cert on master
-      # Then, run any tests
+      create_host_config([agent, master], config)
+      ENV['PACKAGE'] = package
+
+      pre_suites = ['lib/setup/build/pre-suite', 'lib/setup/common/pre-suite']
+      cmd = "bundle exec beaker --hosts=#{config} --type=aio --pre-suite=#{pre_suites.join(',')} --keyfile=#{keyfile} --preserve-hosts=always --debug"
+      cmd = cmd + " --tests=#{test_location}" if tests
+      execute(cmd)
+
+      log = YAML.load_file('log/latest/hosts_preserved.yml')
+      print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
+
       create_host_config([agent, master], config)
       exit 0
     end

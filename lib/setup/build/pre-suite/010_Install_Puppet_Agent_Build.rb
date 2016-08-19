@@ -10,6 +10,6 @@ agents.each do |agent|
   end
 
   step "Install package on #{agent}" do
-    agent.install_package(ENV['PACKAGE'])
+    agent.install_package("#{tmpdir}/#{File.basename(ENV['PACKAGE'])}")
   end
 end
