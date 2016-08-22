@@ -1,7 +1,3 @@
-#! /Users/whopper/.rbenv/shims/ruby
-
-#! /usr/env/ruby
-
 module Puppetstein
   class Host
     attr_accessor :string # platform
