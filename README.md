@@ -8,7 +8,8 @@ This is super a work in progress, especially this README.
 
 Options:
   `--puppet_agent=<forK:SHA>`  The base version of puppet-agent to use. To use packages from builds.puppetlabs, you must provide
-                              a SHA that exists there. When building a new package, any SHA or branch will do.
+                               a SHA that exists there. When building a new package, any SHA or branch will do. Omit to use
+                               the latest puppet-agent.
 
   `--platform=<OS>`            The VMpooler platform to use. Format: platform-version-arch, i.e 'centos-7-x86_64'
 
@@ -40,6 +41,9 @@ suites on modified puppet-agent builds (and everything in between).
    that currently, RedHat 7 is the default master platform. This will be updated in the future to allow more flexibility.**
 
 `puppetstein --puppet_agent=puppetlabs:2c3bbe8e6553a533d596cbfe2f86d4ba47c0ec0f --platform=centos-7-x86_64 --keyfile=~/.ssh/id_rsa-acceptance`
+
+**1.5) Do the same as above but use the latest puppet-agent package from nightlies**
+`puppetstein --platform=centos-7-x86_64 --keyfile=~/.ssh/id_rsa-acceptance`
 
 This will result in a fully provisioned agent and master with certs signed. The run will conclude with a report indicating
 the respective hostnames, which can then be used for further testing.
