@@ -1,5 +1,3 @@
-#! /Users/whopper/.rbenv/shims/ruby
-
 require_relative 'git_utils.rb'
 require_relative 'log_utils.rb'
 require "net/http"

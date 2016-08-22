@@ -1,6 +1,4 @@
-#! /Users/whopper/.rbenv/shims/ruby
-
-#! /usr/env/ruby
+#! /usr/bin/env ruby
 
 require 'cri'
 require 'git'
