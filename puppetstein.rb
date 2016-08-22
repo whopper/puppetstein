@@ -129,6 +129,7 @@ command = Cri::Command.define do
     end
 
     if build_mode || opts[:facter]
+      pa_sha = 'master' if pa_sha == 'nightly'
       clone_repo('puppet-agent', pa_fork, pa_sha, tmp)
       create_host_config([agent, master], config)
 

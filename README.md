@@ -51,13 +51,11 @@ the respective hostnames, which can then be used for further testing.
 **2) Using the same puppet-agent SHA as example 1 as a base, modify the install with a puppet feature branch and run a
    specific puppet test on the resulting agent.**
 
-`puppetstein --puppet_agent=puppetlabs:2c3bbe8e6553a533d596cbfe2f86d4ba47c0ec0f --platform=centos-7-x86_64
---puppet=whopper:my_amazing_branch --tests=puppet:tests/resource/package/yum.rb --keyfile=~/.ssh/id_rsa-acceptance`
+`puppetstein --platform=centos-7-x86_64 --puppet=whopper:my_amazing_branch --tests=puppet:tests/resource/package/yum.rb --keyfile=~/.ssh/id_rsa-acceptance`
 
 **3) Do the same as example 2, but modify the agent with a specific puppet pull request**
 
-`puppetstein --puppet_agent=puppetlabs:2c3bbe8e6553a533d596cbfe2f86d4ba47c0ec0f --platform=centos-7-x86_64
---puppet=pr_5698 --tests=puppet:tests/resource/package/yum.rb --keyfile=~/.ssh/id_rsa-acceptance`
+`puppetstein --platform=centos-7-x86_64 --puppet=pr_5698 --tests=puppet:tests/resource/package/yum.rb --keyfile=~/.ssh/id_rsa-acceptance`
 
 To use a GitHub pull request, simply specify project:pr_number. Example: `puppet=pr_5698`
 
@@ -69,9 +67,7 @@ temporary directory to acquire the acceptance tests. To instead use an existing 
 
 **4) Do the same as #2 but test with a facter test on your local filesystem rather than cloning in the tests**
 
-`puppetstein --puppet_agent=puppetlabs:2c3bbe8e6553a533d596cbfe2f86d4ba47c0ec0f --platform=centos-7-x86_64
---puppet=whopper:my_amazing_branch --tests=facter:tests/facts/el.rb --acceptancedir=/Users/home/whopper/facter/acceptance
---keyfile=~/.ssh/id_rsa-acceptance`
+`puppetstein --platform=centos-7-x86_64 --puppet=whopper:my_amazing_branch --tests=facter:tests/facts/el.rb --acceptancedir=/Users/home/whopper/facter/acceptance --keyfile=~/.ssh/id_rsa-acceptance`
 
 **5) Run a different test on the same hosts that were provisioned in example 3**
 
