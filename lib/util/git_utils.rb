@@ -14,7 +14,7 @@ module Puppetstein
       args[:path] = "#{tmpdir}/"
       args[:depth] = depth if depth
 
-      g = Git.clone("git@github.com:#{git_fork}/#{project}.git", project, args)
+      g = Git.clone("https://github.com/#{git_fork}/#{project}.git", project, args)
       g.fetch
       g.checkout(sha)
       log_notice("cloned #{project}:#{sha} to #{tmpdir}/#{project}")
