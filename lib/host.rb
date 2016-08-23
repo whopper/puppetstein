@@ -16,9 +16,6 @@ module Puppetstein
       @version       = get_platform_version(@string)
       @arch          = get_platform_arch(@string)
       @vanagon_arch  = get_vanagon_arch(@string)
-      @package_command         = get_package_command(@family)
-      @package_manager_command = get_package_manager_command(@family)
-      @local_tmpdir = tmpdir
       @family_string = "#{@family}-#{@version}-#{@arch}"
     end
 
