@@ -7,11 +7,7 @@ module Puppetstein
     attr_accessor :version
     attr_accessor :arch
     attr_accessor :vanagon_arch
-    attr_accessor :package_command
-    attr_accessor :package_manager_command
     attr_accessor :hostname
-    attr_accessor :keyfile
-    attr_accessor :local_tmpdir # scratch space for building puppet-agent locally
 
     def initialize(platform)
       @string        = platform
@@ -80,37 +76,6 @@ module Puppetstein
       else
         platform_string.split('-')[2]
       end
-    end
-
-    def get_package_type(platform_string)
-      case platform_string.split('-')[0]
-      when 'centos', 'redhat', 'el'
-        'rpm'
-      else
-        'deb'
-      end
-    end
-
-    def get_package_command(platform_family)
-      case platform_family
-        when 'el'
-          'rpm -i'
-        when 'debian'
-          'dpkg -i'
-      end
-    end
-
-    def get_package_manager_command(platform_family)
-      case platform_family
-        when 'el'
-          'yum -y install'
-        when 'debian'
-          'apt-get update && apt-get -y install'
-      end
-    end
-
-    def tmpdir
-      `mktemp -d /tmp/puppetstein.XXXXX`.chomp!
     end
   end
 end
