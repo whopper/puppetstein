@@ -43,6 +43,7 @@ suites on modified puppet-agent builds (and everything in between).
 `puppetstein --puppet_agent=puppetlabs:2c3bbe8e6553a533d596cbfe2f86d4ba47c0ec0f --platform=centos-7-x86_64 --keyfile=~/.ssh/id_rsa-acceptance`
 
 **1.5) Do the same as above but use the latest puppet-agent package from nightlies**
+
 `puppetstein --platform=centos-7-x86_64 --keyfile=~/.ssh/id_rsa-acceptance`
 
 This will result in a fully provisioned agent and master with certs signed. The run will conclude with a report indicating
