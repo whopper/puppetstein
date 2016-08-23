@@ -79,8 +79,16 @@ command = Cri::Command.define do
     end
 
     if opts[:puppet_agent]
-      pa_fork, pa_sha = opts.fetch(:puppet_agent).split(':')
+      pa = opts.fetch(:puppet_agent).split(':')
+      if pa.length == 2
+        pa_fork = pa[0]
+        pa_sha = pa[1]
+      else
+        pa_sha = pa[0]
+      end
       pa_sha = 'nightly' if pa_sha == 'latest'
+      puts pa_sha
+      puts "HIHIHI"
     else
       # TODO: builds.puppetlabs doesn't have latest...
       pa_fork = 'puppetlabs'
