@@ -87,10 +87,7 @@ command = Cri::Command.define do
         pa_sha = pa[0]
       end
       pa_sha = 'nightly' if pa_sha == 'latest'
-      puts pa_sha
-      puts "HIHIHI"
     else
-      # TODO: builds.puppetlabs doesn't have latest...
       pa_fork = 'puppetlabs'
       pa_sha = 'nightly'
     end
@@ -145,12 +142,12 @@ command = Cri::Command.define do
         if opts[:"#{p}"]
           if pr = /pr_(\d+)/.match(opts[:"#{p}"])
             # This is a pull request number. Get the fork and branch
-            project_fork, project_sha = get_ref_from_pull_request(p, pr[1]).split(':')
+            v = parse_project_version(get_ref_from_pull_request(p, pr[1]))
           else
-            project_fork, project_sha = opts[:"#{p}"].split(':')
+            v = parse_project_version(opts[:"#{p}"])
           end
 
-          change_component_ref(p, "git://github.com/#{project_fork}/#{p}.git", project_sha, tmp)
+          change_component_ref(p, "git://github.com/#{v[:fork]}/#{p}.git", v[:sha], tmp)
         end
       end
 
@@ -191,12 +188,12 @@ command = Cri::Command.define do
       if opts[:"#{p}"]
         if pr = /pr_(\d+)/.match(opts[:"#{p}"])
           # This is a pull request number. Get the fork and branch
-          project_fork, project_sha = get_ref_from_pull_request(p, pr[1]).split(':')
+          v = parse_project_version(get_ref_from_pull_request(p, pr[1]))
         else
-          project_fork, project_sha = opts[:"#{p}"].split(':')
+          v = parse_project_version(opts[:"#{p}"])
         end
 
-        ENV["#{p.upcase}"] = "#{project_fork}:#{project_sha}"
+        ENV["#{p.upcase}"] = "#{v[:fork]}:#{v[:sha]}"
       end
     end
 
@@ -211,6 +208,18 @@ command = Cri::Command.define do
     print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
     exit 0
   end
+end
+
+def parse_project_version(option)
+  keys = option.split(':')
+  if keys.length == 2
+    project_fork = keys[0]
+    project_sha = keys[1]
+  else
+    project_fork = 'puppetlabs'
+    project_sha = keys[0]
+  end
+  {:fork => project_fork, :sha => project_sha}
 end
 
 def run_beaker(args = {})
