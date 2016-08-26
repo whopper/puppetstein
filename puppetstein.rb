@@ -23,7 +23,7 @@ command = Cri::Command.define do
   name 'puppetstein'
   usage 'puppetstein [options] [arguments]
 
-         Example: puppetstein --puppet_agent=puppetlabs:1.5.4 --puppet=whopper:my_branch --hack --install --tests=./puppet/acceptance/tests --platform=centos-7-x86_64'
+         Example: puppetstein --puppet=whopper:my_branch --tests=facter:tests/facts/el.rb --platform=centos-7-x86_64'
 
   summary 'Standalone puppet-agent composing and testing tool'
   description 'A tool to automate the building and composition of various versions of
@@ -282,6 +282,13 @@ def build_puppet_agent(host, keyfile, tmp)
   cmd = "pushd #{tmp}/puppet-agent && bundle install && bundle exec build puppet-agent" +
         " #{host.family}-#{host.version}-#{host.vanagon_arch} && popd"
   execute(cmd)
+end
+
+def build_facter
+  # 1) Clone, build and install leatherman (check if it exists? Require it?)
+  # 1.5) Clone, build and install cpp-hocon??
+  # 2) Clone and build facter
+  # 3) copy libfacter.so to VM and put in on top of the old one
 end
 
 def cleanup

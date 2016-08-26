@@ -26,6 +26,8 @@ module Puppetstein
         'el'
       when 'debian', 'ubuntu'
         'debian'
+      when 'win'
+        'win'
       end
     end
 
@@ -35,6 +37,8 @@ module Puppetstein
       case base
         when 'redhat', 'centos'
           base
+        when 'win'
+          'windows'
         when 'debian', 'ubuntu'
           case version
             when '7'
