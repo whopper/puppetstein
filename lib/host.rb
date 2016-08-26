@@ -28,6 +28,8 @@ module Puppetstein
         'debian'
       when 'win'
         'win'
+      when 'osx'
+        'osx'
       end
     end
 
@@ -39,6 +41,8 @@ module Puppetstein
           base
         when 'win'
           'windows'
+        when 'osx'
+          'osx'
         when 'debian', 'ubuntu'
           case version
             when '7'
