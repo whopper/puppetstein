@@ -115,7 +115,7 @@ command = Cri::Command.define do
       options['keyfile'] = keyfile if keyfile
       run_beaker(options)
 
-      log = YAML.load_file('log/latest/hosts_preserved.yml')
+      log = get_log
       print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
       exit 0
     end
@@ -162,7 +162,7 @@ command = Cri::Command.define do
       options['keyfile'] = keyfile if keyfile
       run_beaker(options)
 
-      log = YAML.load_file('log/latest/hosts_preserved.yml')
+      log = get_log
       print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
       exit 0
     end
@@ -177,7 +177,7 @@ command = Cri::Command.define do
       options['keyfile'] = keyfile if keyfile
       run_beaker(options)
 
-      log = YAML.load_file('log/latest/hosts_preserved.yml')
+      log = get_log
       print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
       exit 0
     end
@@ -204,10 +204,15 @@ command = Cri::Command.define do
     options['keyfile'] = keyfile if keyfile
     run_beaker(options)
 
-    log = YAML.load_file('log/latest/hosts_preserved.yml')
+    log = get_log
     print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
     exit 0
   end
+end
+
+def get_log
+  log = YAML.load_file('log/latest/hosts_preserved.yml')
+  log.inject({}){|memo,(k,v)| memo[k.to_sym] = v; memo}
 end
 
 def parse_project_version(option)

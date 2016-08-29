@@ -4,7 +4,8 @@ patchable_projects = ['PUPPET', 'HIERA']
 
 patchable_projects.each do |project|
   [agent, master].each do |host|
-    host.install_package('git') if ENV["PUPPET"] || ENV["HIERA"]
+    host.install_package('git') if (ENV["PUPPET"] || ENV["HIERA"]) && host[:platform] !~ /osx/
+
     if patch_ref = ENV["#{project}"]
       project_fork, project_sha = patch_ref.split(':')
       step "Patch #{project} on #{host} with #{project_fork}:#{project_sha}" do
