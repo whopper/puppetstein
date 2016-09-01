@@ -11,6 +11,6 @@ agents.each do |agent|
       on(agent, "puppet config set --section main server #{stdout.chomp}")
     end
 
-    on(master, "service puppetserver start")
+    on(master, puppet('resource', 'service', master['puppetservice'], "ensure=running"))
   end
 end
