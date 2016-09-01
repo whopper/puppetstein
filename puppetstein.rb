@@ -13,10 +13,12 @@ require 'beaker/options/options_hash.rb'
 require_relative 'lib/host'
 require_relative 'lib/util/platform_utils.rb'
 require_relative 'lib/util/git_utils.rb'
+require_relative 'lib/util/log_utils.rb'
 
 include Puppetstein
 include Puppetstein::PlatformUtils
 include Puppetstein::GitUtils
+include Puppetstein::LogUtils
 include Beaker::DSL::InstallUtils::FOSSUtils
 
 command = Cri::Command.define do
@@ -78,6 +80,9 @@ command = Cri::Command.define do
       exit 1
     end
 
+    ###
+    # Get puppet_agent version info
+    ###
     if opts[:puppet_agent]
       pa = opts.fetch(:puppet_agent).split(':')
       if pa.length == 2
@@ -95,6 +100,9 @@ command = Cri::Command.define do
     ENV['PA_SHA'] = pa_sha
     ENV['PA_SUITE'] = opts.fetch(:puppet_agent_suite_version) if opts[:puppet_agent_suite_version]
 
+    ###
+    # Setup tests: clone the proper repo(s) at the proper SHAs
+    ###
     if tests
       project, test = tests.split(':')
       if acceptancedir
@@ -121,17 +129,23 @@ command = Cri::Command.define do
       end
     end
 
+    ###
+    # use_last mode: use the last host config we have with the given tests
+    ###
     if use_last
       options = {'hosts' => 'log/latest/hosts_preserved.yml'}
       options['tests'] = test_location if tests
       options['keyfile'] = keyfile if keyfile
       run_beaker(options)
 
-      log = get_log
+      log = get_latest_host_config
       print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
       exit 0
     end
 
+    ###
+    # hostname mode: if give an agent and master hostname, use those with given tests
+    ###
     if agent.hostname && master.hostname
       create_host_config([agent, master], config)
       options = {'hosts' => config, 'flag' => 'no-provision'}
@@ -143,6 +157,9 @@ command = Cri::Command.define do
       exit 0
     end
 
+    ###
+    # build_mode: build a puppet_agent package with given component SHAs
+    ###
     if build_mode || opts[:facter]
       pa_sha = 'master' if pa_sha == 'nightly'
       clone_repo('puppet-agent', pa_fork, pa_sha, tmp)
@@ -174,11 +191,14 @@ command = Cri::Command.define do
       options['keyfile'] = keyfile if keyfile
       run_beaker(options)
 
-      log = get_log
+      log = get_latest_host_config
       print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
       exit 0
     end
 
+    ###
+    # package mode: use an existing package on the local filesystem
+    ###
     if package
       create_host_config([agent, master], config)
       ENV['PACKAGE'] = package
@@ -189,12 +209,14 @@ command = Cri::Command.define do
       options['keyfile'] = keyfile if keyfile
       run_beaker(options)
 
-      log = get_log
+      log = get_latest_host_config
       print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
       exit 0
     end
 
-    # Patch mode: If no other mode was specifically requested
+    ###
+    # Patch mode: If no other mode was specifically requested, try to patch a component
+    ###
     patchable_projects = ['puppet', 'hiera']
     patchable_projects.each do |p|
       if opts[:"#{p}"]
@@ -216,15 +238,10 @@ command = Cri::Command.define do
     options['keyfile'] = keyfile if keyfile
     run_beaker(options)
 
-    log = get_log
+    log = get_latest_host_config
     print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
     exit 0
   end
-end
-
-def get_log
-  log = YAML.load_file('log/latest/hosts_preserved.yml')
-  log.inject({}){|memo,(k,v)| memo[k.to_sym] = v; memo}
 end
 
 def parse_project_version(option)
