@@ -1,4 +1,46 @@
+require_relative 'log_utils.rb'
+require_relative 'platform_utils.rb'
+require 'beaker-hostgenerator'
+require 'beaker/platform'
+require 'beaker/logger'
+require 'beaker/result'
+require 'beaker/dsl/install_utils'
+require 'beaker/dsl/install_utils/foss_utils'
+require 'beaker/options/options_hash.rb'
+
 module Puppetstein
+  module BeakerUtils
+    def run_beaker(args = {})
+      options = ''
+      args.each do |k,v|
+        if k == 'flag'
+          options = options + "--#{v}"
+        else
+          options = options + "--#{k}=#{v} "
+        end
+      end
+
+      cmd = "bundle exec beaker --options-file=options.rb #{options} --debug"
+      Puppetstein::LogUtils.log_notice(cmd)
+      Puppetstein::PlatformUtils.execute(cmd)
+    end
+
+    def create_host_config(hosts, config)
+      if hosts[0].hostname && hosts[1].hostname
+        targets = "#{hosts[0].flavor}#{hosts[0].version}-64a{hostname=#{hosts[0].hostname}}-#{hosts[1].flavor}#{hosts[1].version}-64m{hostname=#{hosts[1].hostname}\,use-service=true}"
+      else
+        targets = "#{hosts[0].flavor}#{hosts[0].version}-64a-#{hosts[1].flavor}#{hosts[1].version}-64m{use-service=true}"
+      end
+
+      cli = BeakerHostGenerator::CLI.new([targets, '--disable-default-role', '--osinfo-version', '1'])
+
+      FileUtils.mkdir_p(File.dirname(config))
+      File.open(config, 'w') do |fh|
+        fh.print(cli.execute)
+      end
+    end
+  end
+
   module CronUtils
     def clean(agent, o={})
       o = {:user => 'tstuser'}.merge(o)

@@ -1,4 +1,3 @@
-require 'json'
 require 'open-uri'
 require_relative 'platform_utils.rb'
 require_relative 'log_utils.rb'

@@ -3,20 +3,15 @@
 require 'cri'
 require 'git'
 require 'yaml'
-require 'beaker-hostgenerator'
-require 'beaker/platform'
-require 'beaker/logger'
-require 'beaker/result'
-require 'beaker/dsl/install_utils'
-require 'beaker/dsl/install_utils/foss_utils'
-require 'beaker/options/options_hash.rb'
 require_relative 'lib/host'
+require_relative 'lib/util/common_utils.rb'
 require_relative 'lib/util/platform_utils.rb'
 require_relative 'lib/util/git_utils.rb'
 require_relative 'lib/util/log_utils.rb'
 
 include Puppetstein
 include Puppetstein::PlatformUtils
+include Puppetstein::BeakerUtils
 include Puppetstein::GitUtils
 include Puppetstein::LogUtils
 include Beaker::DSL::InstallUtils::FOSSUtils
@@ -84,20 +79,14 @@ command = Cri::Command.define do
     # Get puppet_agent version info
     ###
     if opts[:puppet_agent]
-      pa = opts.fetch(:puppet_agent).split(':')
-      if pa.length == 2
-        pa_fork = pa[0]
-        pa_sha = pa[1]
-      else
-        pa_sha = pa[0]
-      end
-      pa_sha = 'nightly' if pa_sha == 'latest'
+      pa_version = parse_project_version(opts.fetch(:puppet_agent))
     else
-      pa_fork = 'puppetlabs'
-      pa_sha = 'nightly'
+      pa_version = Hash.new
+      pa_version[:fork] = 'puppetlabs'
+      pa_version[:sha] = 'nightly'
     end
 
-    ENV['PA_SHA'] = pa_sha
+    ENV['PA_SHA'] = pa_version[:sha]
     ENV['PA_SUITE'] = opts.fetch(:puppet_agent_suite_version) if opts[:puppet_agent_suite_version]
 
     ###
@@ -123,6 +112,7 @@ command = Cri::Command.define do
           v[:sha] = 'master'
         end
 
+        log_notice("Cloning tests...")
         clone_repo(project, v[:fork], v[:sha], tmp)
         ENV['RUBYLIB'] = "#{tmp}/#{project}/acceptance/lib"
         test_location = "#{tmp}/#{project}/acceptance/#{test}"
@@ -139,7 +129,7 @@ command = Cri::Command.define do
       run_beaker(options)
 
       log = get_latest_host_config
-      print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
+      print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_version[:fork]}:#{pa_version[:sha]}"})
       exit 0
     end
 
@@ -153,7 +143,7 @@ command = Cri::Command.define do
       options['keyfile'] = keyfile if keyfile
       run_beaker(options)
 
-      print_report({:agent => agent.hostname, :master => master.hostname, :puppet_agent => "#{pa_fork}:#{pa_sha}"})
+      print_report({:agent => agent.hostname, :master => master.hostname, :puppet_agent => "#{pa_version[:fork]}:#{pa_version[:sha]}"})
       exit 0
     end
 
@@ -161,8 +151,8 @@ command = Cri::Command.define do
     # build_mode: build a puppet_agent package with given component SHAs
     ###
     if build_mode || opts[:facter]
-      pa_sha = 'master' if pa_sha == 'nightly'
-      clone_repo('puppet-agent', pa_fork, pa_sha, tmp)
+      pa_version[:sha] = 'master' if pa_version[:sha] == 'nightly'
+      clone_repo('puppet-agent', pa_version[:fork], pa_version[:sha], tmp)
       create_host_config([agent, master], config)
 
       ##
@@ -192,7 +182,7 @@ command = Cri::Command.define do
       run_beaker(options)
 
       log = get_latest_host_config
-      print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
+      print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_version[:fork]}:#{pa_version[:sha]}"})
       exit 0
     end
 
@@ -210,7 +200,7 @@ command = Cri::Command.define do
       run_beaker(options)
 
       log = get_latest_host_config
-      print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
+      print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_version[:fork]}:#{pa_version[:sha]}"})
       exit 0
     end
 
@@ -239,7 +229,7 @@ command = Cri::Command.define do
     run_beaker(options)
 
     log = get_latest_host_config
-    print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_fork}:#{pa_sha}"})
+    print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_version[:fork]}:#{pa_version[:sha]}"})
     exit 0
   end
 end
@@ -253,52 +243,12 @@ def parse_project_version(option)
     project_fork = 'puppetlabs'
     project_sha = keys[0]
   end
+  project_sha = 'nightly' if project_sha == 'latest'
   {:fork => project_fork, :sha => project_sha}
-end
-
-def run_beaker(args = {})
-  options = ''
-  args.each do |k,v|
-    if k == 'flag'
-      options = options + "--#{v}"
-    else
-      options = options + "--#{k}=#{v} "
-    end
-  end
-
-  cmd = "bundle exec beaker --options-file=options.rb #{options} --debug"
-  puts cmd
-  execute(cmd)
-end
-
-def create_host_config(hosts, config)
-  if hosts[0].hostname && hosts[1].hostname
-    targets = "#{hosts[0].flavor}#{hosts[0].version}-64a{hostname=#{hosts[0].hostname}}-#{hosts[1].flavor}#{hosts[1].version}-64m{hostname=#{hosts[1].hostname}\,use-service=true}"
-  else
-    targets = "#{hosts[0].flavor}#{hosts[0].version}-64a-#{hosts[1].flavor}#{hosts[1].version}-64m{use-service=true}"
-  end
-
-  cli = BeakerHostGenerator::CLI.new([targets, '--disable-default-role', '--osinfo-version', '1'])
-
-  FileUtils.mkdir_p(File.dirname(config))
-  File.open(config, 'w') do |fh|
-    fh.print(cli.execute)
-  end
 end
 
 def tmpdir
   `mktemp -d /tmp/puppetstein.XXXXX`.chomp!
-end
-
-def print_report(report)
-  puts "\n\n"
-  puts "====================================="
-  puts "Run Report"
-  puts "====================================="
-  report.each do |k,v|
-    puts "#{k}: #{v}"
-  end
-  puts "====================================="
 end
 
 def change_component_ref(component_name, url, ref, tmp)
