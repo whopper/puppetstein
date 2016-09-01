@@ -96,14 +96,26 @@ command = Cri::Command.define do
     ENV['PA_SUITE'] = opts.fetch(:puppet_agent_suite_version) if opts[:puppet_agent_suite_version]
 
     if tests
-      # --tests=facter:facts/el.rb
-      # --acceptancedir=~/Coding/facter/acceptance
       project, test = tests.split(':')
       if acceptancedir
         ENV['RUBYLIB'] = "#{acceptancedir}/lib"
         test_location = "#{acceptancedir}/#{test}"
       else
-        clone_repo(project, 'puppetlabs', 'master', tmp)
+        if opts[:"#{project}"]
+          # A topic branch may contain new acceptance tests, so clone it for tests.
+          if pr = /pr_(\d+)/.match(opts[:"#{project}"])
+            # This is a pull request number. Get the fork and branch
+            v = parse_project_version(get_ref_from_pull_request(p, pr[1]))
+          else
+            v = parse_project_version(opts[:"#{project}"])
+          end
+        else
+          v = Hash.new
+          v[:fork] = 'puppetlabs'
+          v[:sha] = 'master'
+        end
+
+        clone_repo(project, v[:fork], v[:sha], tmp)
         ENV['RUBYLIB'] = "#{tmp}/#{project}/acceptance/lib"
         test_location = "#{tmp}/#{project}/acceptance/#{test}"
       end
