@@ -123,6 +123,7 @@ command = Cri::Command.define do
     # use_last mode: use the last host config we have with the given tests
     ###
     if use_last
+      log_notice("Using last pre-provisioned hosts...")
       options = {'hosts' => 'log/latest/hosts_preserved.yml'}
       options['tests'] = test_location if tests
       options['keyfile'] = keyfile if keyfile
