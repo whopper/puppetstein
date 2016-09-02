@@ -14,7 +14,7 @@ module Puppetstein
       options = ''
       args.each do |k,v|
         if k == 'flag'
-          options = options + "--#{v}"
+          options = options + "--#{v} "
         else
           options = options + "--#{k}=#{v} "
         end
