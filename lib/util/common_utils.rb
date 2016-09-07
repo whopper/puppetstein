@@ -21,17 +21,25 @@ module Puppetstein
       end
 
       cmd = "bundle exec beaker --options-file=options.rb #{options} --debug"
-      Puppetstein::LogUtils.log_notice(cmd)
-      Puppetstein::PlatformUtils.execute(cmd)
+
+      if args['noop']
+        Puppetstein::LogUtils.log_notice("Running beaker with the following command:\n\n")
+        Puppetstein::LogUtils.log_notice(cmd)
+        Puppetstein::LogUtils.log_notice('Finished noop mode')
+      else
+        Puppetstein::LogUtils.log_notice(cmd)
+        Puppetstein::PlatformUtils.execute(cmd)
+      end
     end
 
     def create_host_config(hosts, config)
       if hosts[0].hostname && hosts[1].hostname
-        targets = "#{hosts[0].flavor}#{hosts[0].version}-64a{hostname=#{hosts[0].hostname}}-#{hosts[1].flavor}#{hosts[1].version}-64m{hostname=#{hosts[1].hostname}\,use-service=true}"
+        targets = "#{hosts[0].beaker_flavor}#{hosts[0].version}-64a{hostname=#{hosts[0].hostname}}-#{hosts[1].beaker_flavor}#{hosts[1].version}-64m{hostname=#{hosts[1].hostname}\,use-service=true}"
       else
-        targets = "#{hosts[0].flavor}#{hosts[0].version}-64a-#{hosts[1].flavor}#{hosts[1].version}-64m{use-service=true}"
+        targets = "#{hosts[0].beaker_flavor}#{hosts[0].version}-64a-#{hosts[1].beaker_flavor}#{hosts[1].version}-64m{use-service=true}"
       end
 
+      Puppetstein::LogUtils.log_notice("Creating host config with targets #{targets}")
       cli = BeakerHostGenerator::CLI.new([targets, '--disable-default-role', '--osinfo-version', '1'])
 
       FileUtils.mkdir_p(File.dirname(config))

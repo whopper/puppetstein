@@ -4,6 +4,7 @@ module Puppetstein
     attr_accessor :family_string
     attr_accessor :family
     attr_accessor :flavor
+    attr_accessor :beaker_flavor
     attr_accessor :version
     attr_accessor :arch
     attr_accessor :vanagon_arch
@@ -13,6 +14,7 @@ module Puppetstein
       @string        = platform
       @family        = get_platform_family(@string)
       @flavor        = get_platform_flavor(@string)
+      @beaker_flavor = get_platform_beaker_hostgen_flavor(@string)
       @version       = get_platform_version(@string)
       @arch          = get_platform_arch(@string)
       @vanagon_arch  = get_vanagon_arch(@string)
@@ -62,6 +64,19 @@ module Puppetstein
             when '1604'
               'xenial'
           end
+      end
+    end
+
+    # Annoyingly, this is different than regular flavor for ubuntu/debian
+    def get_platform_beaker_hostgen_flavor(platform_string)
+      base = platform_string.split('-')[0]
+      case base
+        when 'redhat', 'centos', 'debian', 'ubuntu'
+          base
+        when 'win'
+          'windows'
+        when 'osx'
+          'osx'
       end
     end
 

@@ -48,13 +48,14 @@ command = Cri::Command.define do
   option :t, :tests, 'tests to run against a puppet-agent installation', argument: :optional
   option nil, :acceptancedir, 'colon separated list of directories where tests and test libraries can be found', argument: :optional
   option :k, :keyfile, 'keyfile to use with vmpooler', argument: :optional
+  flag :nil, :noop, 'noop mode - output beaker command to run but don\'t execute', argument: :optional
 
   run do |opts, args, cmd|
     if opts[:platform]
       agent = Host.new(opts.fetch(:platform))
       master = Host.new('redhat-7-x86_64')
     else
-      agent = Host.new('ubuntu-1604-x86_64')
+      agent = Host.new('ubuntu-1604-amd64')
       master = Host.new('redhat-7-x86_64')
     end
 
@@ -88,6 +89,7 @@ command = Cri::Command.define do
 
     ENV['PA_SHA'] = pa_version[:sha]
     ENV['PA_SUITE'] = opts.fetch(:puppet_agent_suite_version) if opts[:puppet_agent_suite_version]
+    log_notice("Using puppet-agent base version #{pa_version[:sha]}")
 
     ###
     # Setup tests: clone the proper repo(s) at the proper SHAs
@@ -97,6 +99,7 @@ command = Cri::Command.define do
       if acceptancedir
         ENV['RUBYLIB'] = "#{acceptancedir}/lib"
         test_location = "#{acceptancedir}/#{test}"
+        log_notice("Using acceptancedir #{acceptancedir}/lib and test location #{acceptancedir}/#{test}")
       else
         if opts[:"#{project}"]
           # A topic branch may contain new acceptance tests, so clone it for tests.
@@ -112,10 +115,11 @@ command = Cri::Command.define do
           v[:sha] = 'master'
         end
 
-        log_notice("Cloning tests...")
-        clone_repo(project, v[:fork], v[:sha], tmp)
+        log_notice("Cloning tests: #{project}: #{v[:fork]}:#{v[:sha]}")
+        clone_repo(project, v[:fork], v[:sha], tmp) if !opts[:noop]
         ENV['RUBYLIB'] = "#{tmp}/#{project}/acceptance/lib"
         test_location = "#{tmp}/#{project}/acceptance/#{test}"
+        log_notice("Using acceptancedir #{tmp}/#{project}/acceptance/lib and test location #{tmp}/#{project}/acceptance/#{test}")
       end
     end
 
@@ -127,10 +131,13 @@ command = Cri::Command.define do
       options = {'hosts' => 'log/latest/hosts_preserved.yml'}
       options['tests'] = test_location if tests
       options['keyfile'] = keyfile if keyfile
+      options['noop'] = opts[:noop]
       run_beaker(options)
 
-      log = get_latest_host_config
-      print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_version[:fork]}:#{pa_version[:sha]}"})
+      if !opts[:noop]
+        log = get_latest_host_config
+        print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_version[:fork]}:#{pa_version[:sha]}"})
+      end
       exit 0
     end
 
@@ -142,18 +149,20 @@ command = Cri::Command.define do
       options = {'hosts' => config, 'flag' => 'no-provision'}
       options['tests'] = test_location if tests
       options['keyfile'] = keyfile if keyfile
+      options['noop'] = opts[:noop]
       run_beaker(options)
-
-      print_report({:agent => agent.hostname, :master => master.hostname, :puppet_agent => "#{pa_version[:fork]}:#{pa_version[:sha]}"})
+      if !opts[:noop]
+        print_report({:agent => agent.hostname, :master => master.hostname, :puppet_agent => "#{pa_version[:fork]}:#{pa_version[:sha]}"})
+      end
       exit 0
     end
 
     ###
     # build_mode: build a puppet_agent package with given component SHAs
     ###
-    if build_mode || opts[:facter]
+    if build_mode
       pa_version[:sha] = 'master' if pa_version[:sha] == 'nightly'
-      clone_repo('puppet-agent', pa_version[:fork], pa_version[:sha], tmp)
+      clone_repo('puppet-agent', pa_version[:fork], pa_version[:sha], tmp) if !opts[:noop]
       create_host_config([agent, master], config)
 
       ##
@@ -167,23 +176,27 @@ command = Cri::Command.define do
             v = parse_project_version(opts[:"#{p}"])
           end
 
-          change_component_ref(p, "git://github.com/#{v[:fork]}/#{p}.git", v[:sha], tmp)
+          change_component_ref(p, "git://github.com/#{v[:fork]}/#{p}.git", v[:sha], tmp, opts[:noop])
         end
       end
 
-      build_puppet_agent(agent, keyfile, tmp)
+      build_puppet_agent(agent, keyfile, tmp) if !opts[:noop]
       package = save_puppet_agent_artifact(agent, tmp)
 
       ENV['PACKAGE'] = package
+      log_notice("Using newly built package #{package}")
 
       pre_suites = ['lib/setup/build/pre-suite', 'lib/setup/common/pre-suite']
       options = {'hosts' => config, 'pre-suite' => pre_suites.join(',')}
       options['tests'] = test_location if tests
       options['keyfile'] = keyfile if keyfile
+      options['noop'] = opts[:noop]
       run_beaker(options)
 
-      log = get_latest_host_config
-      print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_version[:fork]}:#{pa_version[:sha]}"})
+      if !opts[:noop]
+        log = get_latest_host_config
+        print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_version[:fork]}:#{pa_version[:sha]}"})
+      end
       exit 0
     end
 
@@ -193,22 +206,26 @@ command = Cri::Command.define do
     if package
       create_host_config([agent, master], config)
       ENV['PACKAGE'] = package
+      log_notice("Using prebuilt package #{package}")
 
       pre_suites = ['lib/setup/build/pre-suite', 'lib/setup/common/pre-suite']
       options = {'hosts' => config, 'pre-suite' => pre_suites.join(',')}
       options['tests'] = test_location if tests
       options['keyfile'] = keyfile if keyfile
+      options['noop'] = opts[:noop]
       run_beaker(options)
 
-      log = get_latest_host_config
-      print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_version[:fork]}:#{pa_version[:sha]}"})
+      if !opts[:noop]
+        log = get_latest_host_config
+        print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_version[:fork]}:#{pa_version[:sha]}"})
+      end
       exit 0
     end
 
     ###
     # Patch mode: If no other mode was specifically requested, try to patch a component
     ###
-    patchable_projects = ['puppet', 'hiera']
+    patchable_projects = ['puppet', 'hiera', 'facter']
     patchable_projects.each do |p|
       if opts[:"#{p}"]
         if pr = /pr_(\d+)/.match(opts[:"#{p}"])
@@ -218,7 +235,8 @@ command = Cri::Command.define do
           v = parse_project_version(opts[:"#{p}"])
         end
 
-        ENV["#{p.upcase}"] = "#{v[:fork]}:#{v[:sha]}"
+        ENV["#{p}"] = "#{v[:fork]}:#{v[:sha]}"
+        log_notice("Using #{p}: #{v[:fork]}:#{v[:sha]}")
       end
     end
 
@@ -227,10 +245,13 @@ command = Cri::Command.define do
     options = {'hosts' => config, 'pre-suite' => pre_suites.join(',')}
     options['tests'] = test_location if tests
     options['keyfile'] = keyfile if keyfile
+    options['noop'] = opts[:noop]
     run_beaker(options)
 
-    log = get_latest_host_config
-    print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_version[:fork]}:#{pa_version[:sha]}"})
+    if !opts[:noop]
+      log = get_latest_host_config
+      print_report({:agent => log[:HOSTS].keys[0], :master => log[:HOSTS].keys[1], :puppet_agent => "#{pa_version[:fork]}:#{pa_version[:sha]}"})
+    end
     exit 0
   end
 end
@@ -252,11 +273,11 @@ def tmpdir
   `mktemp -d /tmp/puppetstein.XXXXX`.chomp!
 end
 
-def change_component_ref(component_name, url, ref, tmp)
+def change_component_ref(component_name, url, ref, tmp, noop=nil)
   new_ref = Hash.new
   new_ref['url'] = url
   new_ref['ref'] = ref
-  File.write("#{tmp}/puppet-agent/configs/components/#{component_name}.json", JSON.pretty_generate(new_ref))
+  File.write("#{tmp}/puppet-agent/configs/components/#{component_name}.json", JSON.pretty_generate(new_ref)) if !noop
   log_notice("updated #{tmp}/puppet-agent/configs/components/#{component_name}.json with url #{url} and ref #{ref}")
 end
 
@@ -280,4 +301,6 @@ def cleanup
   `rm -rf #{tmpdir}`
 end
 
-command.run(ARGV)
+if __FILE__ == $0
+  command.run(ARGV)
+end
