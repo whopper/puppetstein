@@ -16,7 +16,7 @@ module Puppetstein
         if k == 'flag'
           options = options + "--#{v} "
         else
-          options = options + "--#{k}=#{v} "
+          options = options + "--#{k}=#{v} " unless k == 'noop'
         end
       end
 
