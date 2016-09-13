@@ -286,7 +286,7 @@ def build_puppet_agent(host, keyfile, tmp)
 
   ENV['VANAGON_SSH_KEY'] = keyfile if keyfile
   cmd = "pushd #{tmp}/puppet-agent && bundle install && bundle exec build puppet-agent" +
-        " #{host.family}-#{host.version}-#{host.vanagon_arch} && popd"
+        " #{host.vanagon_string} && popd"
   execute(cmd)
 end
 

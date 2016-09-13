@@ -5,20 +5,24 @@ module Puppetstein
     attr_accessor :family
     attr_accessor :flavor
     attr_accessor :beaker_flavor
+    attr_accessor :beaker_version
     attr_accessor :version
     attr_accessor :arch
     attr_accessor :vanagon_arch
+    attr_accessor :vanagon_string
     attr_accessor :hostname
 
     def initialize(platform)
-      @string        = platform
-      @family        = get_platform_family(@string)
-      @flavor        = get_platform_flavor(@string)
-      @beaker_flavor = get_platform_beaker_hostgen_flavor(@string)
-      @version       = get_platform_version(@string)
-      @arch          = get_platform_arch(@string)
-      @vanagon_arch  = get_vanagon_arch(@string)
-      @family_string = "#{@family}-#{@version}-#{@arch}"
+      @string         = platform
+      @family         = get_platform_family(@string)
+      @flavor         = get_platform_flavor(@string)
+      @version        = get_platform_version(@string)
+      @arch           = get_platform_arch(@string)
+      @vanagon_arch   = get_vanagon_arch(@string)
+      @vanagon_string = get_vanagon_string(@string)
+      @family_string  = "#{@family}-#{@version}-#{@arch}"
+      @beaker_flavor  = get_platform_beaker_hostgen_flavor(@string)
+      @beaker_version = get_platform_beaker_hostgen_version(@string)
     end
 
     def get_platform_family(platform_string)
@@ -80,6 +84,17 @@ module Puppetstein
       end
     end
 
+    def get_platform_beaker_hostgen_version(platform_string)
+      os = platform_string.split('-')[0]
+      base = platform_string.split('-')[1]
+      case os
+        when 'osx'
+          "#{@version[0, 2]}#{@version[2..-1]}"
+        else
+          base
+        end
+    end
+
     def get_platform_version(platform_string)
       platform_string.split('-')[1]
     end
@@ -95,6 +110,16 @@ module Puppetstein
         'amd64'
       else
         platform_string.split('-')[2]
+      end
+    end
+
+    def get_vanagon_string(platform_string)
+      case platform_string.split('-')[0]
+      when 'osx'
+        puts "osx-#{@version[0, 2]}.#{@version[2..-1]}-#{@vanagon_arch}"
+        "osx-#{@version[0, 2]}.#{@version[2..-1]}-#{@vanagon_arch}"
+      else
+        "#{@family}-#{@version}-#{@vanagon_arch}"
       end
     end
   end

@@ -34,9 +34,9 @@ module Puppetstein
 
     def create_host_config(hosts, config)
       if hosts[0].hostname && hosts[1].hostname
-        targets = "#{hosts[0].beaker_flavor}#{hosts[0].version}-64a{hostname=#{hosts[0].hostname}}-#{hosts[1].beaker_flavor}#{hosts[1].version}-64m{hostname=#{hosts[1].hostname}\,use-service=true}"
+        targets = "#{hosts[0].beaker_flavor}#{hosts[0].beaker_version}-64a{hostname=#{hosts[0].hostname}}-#{hosts[1].beaker_flavor}#{hosts[1].beaker_version}-64m{hostname=#{hosts[1].hostname}\,use-service=true}"
       else
-        targets = "#{hosts[0].beaker_flavor}#{hosts[0].version}-64a-#{hosts[1].beaker_flavor}#{hosts[1].version}-64m{use-service=true}"
+        targets = "#{hosts[0].beaker_flavor}#{hosts[0].beaker_version}-64a-#{hosts[1].beaker_flavor}#{hosts[1].beaker_version}-64m{use-service=true}"
       end
 
       Puppetstein::LogUtils.log_notice("Creating host config with targets #{targets}")
