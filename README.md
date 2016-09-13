@@ -7,30 +7,31 @@ This is super a work in progress, especially this README.
 ### Usage
 
 Options:
-  `--puppet_agent=<forK:SHA>`  The base version of puppet-agent to use. To use packages from builds.puppetlabs, you must provide
-                               a SHA that exists there. When building a new package, any SHA or branch will do. Omit to use
-                               the latest puppet-agent.
+  `--puppet_agent=<forK:SHA>`  The base version of puppet-agent to use. To use packages from builds.puppetlabs, you must provide a SHA that exists there. When building a new package, any SHA or branch will do. Omit to use the latest puppet-agent.
 
-  `--platform=<OS>`            The VMpooler platform to use. Format: platform-version-arch, i.e 'centos-7-x86_64'
+  `--platform=<OS>` The VMpooler platform to use. Format: platform-version-arch, i.e 'centos-7-x86_64'
 
-  `--build`                    Option to force puppetstein to build a new puppet-agent package rather than retrieving a pre-existing one.
+  `--build` Option to force puppetstein to build a new puppet-agent package rather than retrieving a pre-existing one.
 
-  `--package=<PATH>`            Path to a puppet-agent package on the local system to install and use for testing.
+  `--package=<PATH>` Path to a puppet-agent package on the local system to install and use for testing.
 
-  `--puppet=<fork:SHA>`        Fork and SHA of the puppet repo to use in the custom puppet-agent.
-  `--facter=<fork:SHA>`        Fork and SHA of the facter repo to use in the custom puppet-agent. Note that a custom facter will
-                              currently require a new puppet-agent build, as it must be compiled.
-  `--hiera=<fork:SHA>`         Fork and SHA of the hiera repo to use in the custom puppet-agent.
+  `--puppet=<fork:SHA>` Fork and SHA of the puppet repo to use in the custom puppet-agent.
 
-  `--agent=<hostname>`          Pre-provisioned VMpooler agent to use for testing. Requires --master.
-  `--master=<hostname>`         Pre-provisioned VMpooler master to use for testing. Requires --agent.
+  `--facter=<fork:SHA>` Fork and SHA of the facter repo to use in the custom puppet-agent. Note that a custom facter will currently require a new puppet-agent build, as it must be compiled.
 
-  `--use_last`                  Option to reuse the same hosts from the last run.
-  `--tests=<project:test>`      Which project and tests to run against the specified or provisioned systems. ':' separated.
-                              Example: 'facter:facts/el.rb'
-  `--acceptancedir=<PATH>`      Path to a local project acceptance dir to use to find tests. Use this to use tests currently on
-                              your local system rather than automatically cloning the project repos for tests.
-  `--keyfile=<PATH>`            Path to an SSH key to use to authenticate with VMpooler machines.
+  `--hiera=<fork:SHA>` Fork and SHA of the hiera repo to use in the custom puppet-agent.
+
+  `--agent=<hostname>` Pre-provisioned VMpooler agent to use for testing. Requires --master.
+
+  `--master=<hostname>` Pre-provisioned VMpooler master to use for testing. Requires --agent.
+
+  `--use_last` Option to reuse the same hosts from the last run.
+
+  `--tests=<project:test>` Which project and tests to run against the specified or provisioned systems. ':' separated. Example: 'facter:facts/el.rb'
+
+  `--acceptancedir=<PATH>` Path to a local project acceptance dir to use to find tests. Use this to use tests currently on your local system rather than automatically cloning the project repos for tests.
+
+  `--keyfile=<PATH>` Path to an SSH key to use to authenticate with VMpooler machines.
 
 ### Examples and Use Cases
 
